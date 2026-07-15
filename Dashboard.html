@@ -1,0 +1,855 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<link href="https://fonts.googleapis.com/css2?family=Poppins:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.1/css/all.min.css">
+<style>
+:root{--primary:#FF5A00;--dark:#411517;--cream:#F4EDE3;--bg:#f8f5f0;--card:#fff;--text:#1f2937;--muted:#6b7280;--border:#e5e0db;--success:#059669;--warning:#d97706;--danger:#dc2626;--radius:10px;--shadow:0 2px 8px rgba(65,21,23,.08)}
+*{margin:0;padding:0;box-sizing:border-box}
+body{font-family:'Poppins',sans-serif;background:var(--bg);color:var(--text);min-height:100vh}
+.header{background:var(--dark);color:#fff;padding:16px 32px;display:flex;align-items:center;justify-content:space-between;position:sticky;top:0;z-index:100;box-shadow:0 2px 12px rgba(0,0,0,.2)}
+.header h1{font-size:20px;font-weight:600;letter-spacing:-.3px}
+.header h1 span{color:var(--primary)}
+.header-right{display:flex;align-items:center;gap:12px}
+.header-right .user-badge{font-size:11px;background:rgba(255,255,255,.12);padding:4px 12px;border-radius:20px;display:flex;align-items:center;gap:6px}
+.header-right .user-badge .role{color:var(--primary);font-weight:600;text-transform:uppercase;font-size:10px}
+.btn{padding:8px 16px;border:none;border-radius:var(--radius);font-family:inherit;font-size:12px;font-weight:500;cursor:pointer;transition:all .2s;display:inline-flex;align-items:center;gap:6px}
+.btn-primary{background:var(--primary);color:#fff}.btn-primary:hover{background:#e04e00;transform:translateY(-1px)}
+.btn-dark{background:var(--dark);color:#fff}.btn-dark:hover{background:#5a2225}
+.btn-outline{background:transparent;border:1.5px solid var(--border);color:var(--text)}.btn-outline:hover{border-color:var(--primary);color:var(--primary)}
+.btn-sm{padding:5px 10px;font-size:11px}
+.btn-icon{width:34px;height:34px;padding:0;justify-content:center;border-radius:8px}
+.btn:disabled{opacity:0.5;cursor:not-allowed}
+.controls{padding:16px 32px;background:var(--cream);border-bottom:1px solid var(--border);display:flex;flex-wrap:wrap;align-items:center;gap:12px}
+.period-toggle{display:flex;background:var(--card);border-radius:var(--radius);overflow:hidden;border:1.5px solid var(--border)}
+.period-toggle button{padding:8px 18px;border:none;background:none;font-family:inherit;font-size:12px;font-weight:500;color:var(--muted);cursor:pointer;transition:all .2s}
+.period-toggle button.active{background:var(--primary);color:#fff}
+.filter-group{display:flex;align-items:center;gap:6px}
+.filter-group label{font-size:11px;font-weight:500;color:var(--muted);text-transform:uppercase;letter-spacing:.5px}
+.filter-group select{padding:7px 28px 7px 10px;border:1.5px solid var(--border);border-radius:8px;font-family:inherit;font-size:12px;background:var(--card);cursor:pointer;appearance:none;background-image:url("data:image/svg+xml,%3Csvg width='10' height='6' viewBox='0 0 10 6' xmlns='http://www.w3.org/2000/svg'%3E%3Cpath d='M1 1l4 4 4-4' stroke='%236b7280' stroke-width='1.5' fill='none'/%3E%3C/svg%3E");background-repeat:no-repeat;background-position:right 8px center}
+.filter-group select:focus{outline:none;border-color:var(--primary)}
+.spacer{flex:1}
+.refresh-info{font-size:10px;color:var(--muted);text-align:right;line-height:1.4}
+.content{padding:24px 32px}
+.kpi-row{display:grid;grid-template-columns:repeat(4,1fr);gap:16px;margin-bottom:24px}
+.kpi-card{background:var(--card);border-radius:var(--radius);padding:20px;border-left:4px solid var(--primary);box-shadow:var(--shadow);transition:transform .2s}
+.kpi-card:hover{transform:translateY(-2px)}
+.kpi-label{font-size:11px;font-weight:500;color:var(--muted);text-transform:uppercase;letter-spacing:.5px;margin-bottom:6px}
+.kpi-value{font-size:28px;font-weight:700;color:var(--dark);line-height:1.1}
+.kpi-sub{font-size:11px;color:var(--muted);margin-top:4px}
+.table-wrap{background:var(--card);border-radius:var(--radius);box-shadow:var(--shadow);overflow:hidden;margin-bottom:24px}
+.table-toolbar{padding:12px 16px;display:flex;align-items:center;justify-content:space-between;border-bottom:1px solid var(--border)}
+.table-toolbar .search{padding:7px 12px;border:1.5px solid var(--border);border-radius:8px;font-family:inherit;font-size:12px;width:260px}
+.table-toolbar .search:focus{outline:none;border-color:var(--primary)}
+.table-scroll{overflow:auto;max-height:500px}
+table{width:100%;border-collapse:collapse}
+thead th{background:var(--dark);color:#fff;padding:10px 14px;font-size:11px;font-weight:600;text-transform:uppercase;letter-spacing:.5px;cursor:pointer;white-space:nowrap;position:sticky;top:0;user-select:none}
+thead th:hover{background:#5a2225}
+thead th .sort-icon{margin-left:4px;opacity:.5;font-size:9px}
+thead th.sorted .sort-icon{opacity:1;color:var(--primary)}
+tbody td{padding:9px 14px;font-size:12px;border-bottom:1px solid var(--border);white-space:nowrap}
+tbody tr:nth-child(even){background:#faf6f1}
+tbody tr:hover{background:#f0ebe4}
+.num{text-align:right;font-variant-numeric:tabular-nums}
+tbody tr.group-row{background:var(--cream);font-weight:600}
+tbody tr.group-row td{border-bottom:2px solid var(--primary);font-size:12px}
+.cpo-badge{display:inline-block;padding:2px 8px;border-radius:4px;font-weight:600;font-size:11px}
+.cpo-low{background:#ecfdf5;color:#059669}
+.cpo-med{background:#fffbeb;color:#d97706}
+.cpo-high{background:#fef2f2;color:#dc2626}
+.modal-overlay{position:fixed;inset:0;background:rgba(0,0,0,.5);z-index:200;display:none;align-items:center;justify-content:center;backdrop-filter:blur(2px)}
+.modal-overlay.show{display:flex}
+.modal{background:var(--card);border-radius:12px;width:90%;max-width:800px;max-height:85vh;overflow:hidden;box-shadow:0 20px 60px rgba(0,0,0,.3);display:flex;flex-direction:column}
+.modal-header{padding:20px 24px;background:var(--dark);color:#fff;display:flex;align-items:center;justify-content:space-between}
+.modal-header h2{font-size:18px;font-weight:600}
+.modal-close{background:none;border:none;color:#fff;font-size:20px;cursor:pointer;opacity:.7}.modal-close:hover{opacity:1}
+.modal-body{padding:24px;overflow-y:auto;flex:1}
+.modal-tabs{display:flex;border-bottom:2px solid var(--border);margin-bottom:20px}
+.modal-tabs button{padding:10px 20px;border:none;background:none;font-family:inherit;font-size:13px;font-weight:500;color:var(--muted);cursor:pointer;border-bottom:2px solid transparent;margin-bottom:-2px;transition:all .2s}
+.modal-tabs button.active{color:var(--primary);border-bottom-color:var(--primary)}
+.form-row{display:flex;gap:12px;margin-bottom:12px;align-items:end}
+.form-group{flex:1}
+.form-group label{display:block;font-size:11px;font-weight:500;color:var(--muted);text-transform:uppercase;margin-bottom:4px}
+.form-group input,.form-group select{width:100%;padding:8px 12px;border:1.5px solid var(--border);border-radius:8px;font-family:inherit;font-size:13px}
+.form-group input:focus,.form-group select:focus{outline:none;border-color:var(--primary)}
+.config-table{width:100%;border-collapse:collapse;margin-top:12px}
+.config-table th{background:var(--cream);padding:8px 12px;font-size:11px;text-align:left;font-weight:600;text-transform:uppercase;border-bottom:1px solid var(--border)}
+.config-table td{padding:8px 12px;font-size:12px;border-bottom:1px solid var(--border)}
+.config-table .actions{display:flex;gap:4px}
+.tag{display:inline-block;padding:2px 8px;border-radius:4px;font-size:10px;font-weight:600;text-transform:uppercase}
+.tag-admin{background:#dbeafe;color:#1d4ed8}
+.tag-manager{background:#fef3c7;color:#92400e}
+.tag-supervisor{background:#d1fae5;color:#065f46}
+.tag-super_admin{background:#fce7f3;color:#be185d}
+.tag-viewer{background:#f3f4f6;color:#6b7280}
+.confirm-overlay{position:fixed;inset:0;background:rgba(0,0,0,.5);z-index:400;display:none;align-items:center;justify-content:center;backdrop-filter:blur(2px)}
+.confirm-overlay.show{display:flex}
+.confirm-box{background:var(--card);border-radius:12px;padding:32px;width:90%;max-width:420px;text-align:center;box-shadow:0 20px 60px rgba(0,0,0,.3);animation:confirmIn .2s ease}
+@keyframes confirmIn{from{transform:scale(.9);opacity:0}to{transform:scale(1);opacity:1}}
+.confirm-icon{font-size:40px;margin-bottom:12px}
+.confirm-icon.warn{color:var(--warning)}
+.confirm-icon.danger{color:var(--danger)}
+.confirm-icon.info{color:var(--primary)}
+.confirm-icon.success{color:var(--success)}
+.confirm-title{font-size:16px;font-weight:600;color:var(--dark);margin-bottom:8px}
+.confirm-msg{font-size:13px;color:var(--muted);line-height:1.6;margin-bottom:24px}
+.confirm-actions{display:flex;gap:10px;justify-content:center}
+.confirm-actions .btn{min-width:100px;justify-content:center}
+.toast{position:fixed;bottom:24px;right:24px;padding:12px 20px;border-radius:var(--radius);color:#fff;font-size:13px;font-weight:500;z-index:300;transform:translateY(80px);opacity:0;transition:all .3s}
+.toast.show{transform:translateY(0);opacity:1}
+.toast-success{background:var(--success)}
+.toast-error{background:var(--danger)}
+.loading{display:flex;align-items:center;justify-content:center;padding:60px;flex-direction:column;gap:16px}
+.spinner{width:40px;height:40px;border:3px solid var(--border);border-top-color:var(--primary);border-radius:50%;animation:spin .8s linear infinite}
+@keyframes spin{to{transform:rotate(360deg)}}
+.empty-state{text-align:center;padding:40px;color:var(--muted)}
+.empty-state i{font-size:40px;margin-bottom:12px;opacity:.3}
+.role-info-box{background:var(--cream);border:1px solid var(--border);border-radius:var(--radius);padding:14px 16px;margin-bottom:16px;font-size:12px;line-height:1.6;color:var(--text)}
+.role-info-box strong{color:var(--dark)}
+.role-info-box .role-item{display:flex;align-items:baseline;gap:8px;margin-bottom:4px}
+.role-info-box .role-dot{width:8px;height:8px;border-radius:50%;flex-shrink:0;margin-top:4px}
+.nav-tabs{display:flex;gap:0;margin-left:24px}
+.nav-tabs button{padding:10px 22px;border:none;background:none;font-family:inherit;font-size:13px;font-weight:500;color:rgba(255,255,255,.6);cursor:pointer;border-bottom:3px solid transparent;transition:all .2s}
+.nav-tabs button.active{color:#fff;border-bottom-color:var(--primary)}
+.nav-tabs button:hover{color:#fff}
+.settings-page{padding:24px 32px}
+.settings-layout{display:flex;gap:24px}
+.settings-sidebar{width:200px;flex-shrink:0}
+.settings-sidebar button{display:flex;align-items:center;gap:10px;width:100%;padding:10px 14px;border:none;background:none;font-family:inherit;font-size:13px;font-weight:500;color:var(--muted);cursor:pointer;border-radius:8px;margin-bottom:2px;transition:all .15s;text-align:left}
+.settings-sidebar button:hover{background:var(--cream);color:var(--text)}
+.settings-sidebar button.active{background:var(--primary);color:#fff}
+.settings-sidebar button i{width:16px;text-align:center}
+.settings-main{flex:1;background:var(--card);border-radius:var(--radius);padding:24px;box-shadow:var(--shadow);min-height:400px}
+.settings-main h3{font-size:16px;font-weight:600;color:var(--dark);margin-bottom:16px;padding-bottom:12px;border-bottom:1px solid var(--border)}
+/* ENHANCED DESIGN */
+html{scroll-behavior:smooth}
+.header{border-top:3px solid var(--primary)}
+.kpi-card:nth-child(1){border-left-color:var(--primary)}
+.kpi-card:nth-child(2){border-left-color:#3B82F6}
+.kpi-card:nth-child(3){border-left-color:#059669}
+.kpi-card:nth-child(4){border-left-color:#dc2626}
+.kpi-row{animation:fadeUp .4s ease}
+@keyframes fadeUp{from{opacity:0;transform:translateY(12px)}to{opacity:1;transform:translateY(0)}}
+.table-wrap{animation:fadeUp .4s ease .1s both}
+.nav-tabs button{position:relative}
+.nav-tabs button.active::after{content:'';position:absolute;bottom:-1px;left:0;right:0;height:3px;background:var(--primary);border-radius:3px 3px 0 0}
+.header-right .user-badge{transition:background .2s}
+.header-right .user-badge:hover{background:rgba(255,255,255,.18)}
+.filter-group select{transition:border-color .2s,box-shadow .2s}
+.filter-group select:focus{box-shadow:0 0 0 3px rgba(255,90,0,.12)}
+.form-group input:focus,.form-group select:focus{box-shadow:0 0 0 3px rgba(255,90,0,.1)}
+.table-toolbar .search{transition:border-color .2s,box-shadow .2s,width .2s}
+.table-toolbar .search:focus{width:320px;box-shadow:0 0 0 3px rgba(255,90,0,.12)}
+.settings-sidebar button{transition:all .2s}
+.settings-sidebar button.active{box-shadow:0 2px 8px rgba(255,90,0,.25)}
+.config-table tr{transition:background .15s}
+.config-table tr:hover td{background:rgba(255,90,0,.03)}
+tbody td{transition:background .15s}
+@media(max-width:768px){.kpi-row{grid-template-columns:repeat(2,1fr)}.controls{padding:12px 16px}.content{padding:16px}.header{padding:12px 16px}.settings-layout{flex-direction:column}.settings-sidebar{width:100%;display:flex;gap:4px;flex-wrap:wrap}.settings-sidebar button{width:auto;flex:1}.nav-tabs{margin-left:12px}.table-toolbar .search{width:160px}.table-toolbar .search:focus{width:200px}}
+</style>
+</head>
+<body>
+
+<div class="header">
+  <div style="display:flex;align-items:center">
+    <h1><i class="fas fa-chart-line" style="color:var(--primary);margin-right:8px"></i>talabat <span>LS</span> — CPO Check</h1>
+    <div class="nav-tabs" id="navTabs">
+      <button class="active" data-view="dashboard" onclick="switchView('dashboard')"><i class="fas fa-chart-bar" style="margin-right:4px"></i>Dashboard</button>
+      <button data-view="settings" onclick="switchView('settings')" id="settingsNavBtn"><i class="fas fa-cog" style="margin-right:4px"></i>Settings</button>
+    </div>
+  </div>
+  <div class="header-right">
+    <div class="user-badge" id="userBadge"><i class="fas fa-user"></i> <span id="userEmail">Loading...</span> <span class="role" id="userRole"></span></div>
+  </div>
+</div>
+
+<div class="controls" id="controlsBar">
+  <div class="period-toggle" id="periodToggle">
+    <button data-period="mtd" data-idx="-1" class="active">MTD</button>
+    <button data-period="mtd" data-idx="pick">Daily</button>
+    <button data-period="weekly" data-idx="pick">Weekly</button>
+    <button data-period="monthly" data-idx="pick">Monthly</button>
+  </div>
+  <div class="filter-group" id="datePickerGroup" style="display:none">
+    <label>Select</label>
+    <select id="datePicker" onchange="onDateChange()"></select>
+  </div>
+  <div class="filter-group">
+    <label>Chain</label>
+    <select id="filterChain" onchange="applyFilters()"><option value="">All</option></select>
+  </div>
+  <div class="filter-group">
+    <label>City</label>
+    <select id="filterCity" onchange="applyFilters()"><option value="">All</option></select>
+  </div>
+  <div class="filter-group">
+    <label>Supervisor</label>
+    <select id="filterSupervisor" onchange="applyFilters()"><option value="">All</option></select>
+  </div>
+  <div class="filter-group">
+    <label>3PL</label>
+    <select id="filter3PL" onchange="applyFilters()"><option value="">All</option></select>
+  </div>
+  <div class="filter-group">
+    <label>Type</label>
+    <select id="filterType" onchange="onTypeChange()">
+      <option value="Picker" selected>Picker</option>
+      <option value="Picker,Scanner">Picker + Scanner</option>
+      <option value="Picker,Scanner,Retail Hub Scanner">All Types</option>
+    </select>
+  </div>
+  <div class="spacer"></div>
+  <div class="refresh-info" id="refreshInfo">Last refresh: —</div>
+  <button class="btn btn-primary" onclick="doRefresh()" id="refreshBtn"><i class="fas fa-sync-alt"></i> Refresh</button>
+</div>
+
+<div class="content" id="mainContent">
+  <div class="loading" id="loadingState"><div class="spinner"></div><div style="font-size:14px;color:var(--muted)">Loading CPO data...</div></div>
+</div>
+
+
+<div class="confirm-overlay" id="confirmModal">
+  <div class="confirm-box">
+    <div class="confirm-icon" id="confirmIcon"><i class="fas fa-question-circle"></i></div>
+    <div class="confirm-title" id="confirmTitle">Confirm</div>
+    <div class="confirm-msg" id="confirmMsg"></div>
+    <div class="confirm-actions">
+      <button class="btn btn-outline" id="confirmCancel" onclick="closeConfirm(false)">Cancel</button>
+      <button class="btn btn-primary" id="confirmOk" onclick="closeConfirm(true)">Confirm</button>
+    </div>
+  </div>
+</div>
+<div class="toast" id="toast"></div>
+
+<script>
+var APP = { cpo:null, allData:[], filteredData:[], periods:{}, config:{}, user:{}, sortCol:'orders', sortAsc:false, currentPeriod:'mtd', currentDateIdx:-1 };
+
+// ========== INIT ==========
+document.addEventListener('DOMContentLoaded', function() {
+  document.querySelectorAll('#periodToggle button').forEach(function(btn) {
+    btn.addEventListener('click', function() {
+      document.querySelectorAll('#periodToggle button').forEach(function(b){b.classList.remove('active')});
+      btn.classList.add('active');
+      var p = btn.dataset.period;
+      var idx = btn.dataset.idx;
+      APP.currentPeriod = p;
+      if (idx === '-1') { APP.currentDateIdx = -1; document.getElementById('datePickerGroup').style.display='none'; loadCPO(); }
+      else { document.getElementById('datePickerGroup').style.display=''; populateDatePicker(p); }
+    });
+  });
+  google.script.run.withSuccessHandler(onInitialData).withFailureHandler(onError).getInitialData();
+});
+
+function onInitialData(result) {
+  APP.periods = result.periods || {};
+  APP.config = result.config || {};
+  APP.user = result.user || {};
+  document.getElementById('userEmail').textContent = APP.user.email || 'Unknown';
+  document.getElementById('userRole').textContent = APP.user.role || '';
+  if (APP.user.role === 'revoked') {
+    document.getElementById('controlsBar').style.display = 'none';
+    document.getElementById('settingsNavBtn').style.display = 'none';
+    document.getElementById('mainContent').innerHTML = '<div class="empty-state" style="padding:80px 40px"><i class="fas fa-lock" style="font-size:48px;color:var(--danger);opacity:.5"></i><h2 style="margin:16px 0 8px;color:var(--dark)">Access Revoked</h2><p style="color:var(--muted);max-width:400px;margin:0 auto">Your access to the CPO Check dashboard has been revoked. Please contact your administrator if you believe this is an error.</p></div>';
+    return;
+  }
+  if (APP.user.role === 'viewer') document.getElementById('settingsNavBtn').style.display = 'none';
+  if (result.timestamp) document.getElementById('refreshInfo').innerHTML = 'Last refresh:<br>' + formatTimestamp(result.timestamp);
+  if (result.cpo) { onCPOData(result.cpo); }
+  else { showEmpty('No data. Click Refresh to load.'); }
+}
+
+// ========== DATA LOADING ==========
+function loadCPO() {
+  showLoading();
+  var types = document.getElementById('filterType').value.split(',');
+  google.script.run.withSuccessHandler(onCPOData).withFailureHandler(onError).computeCPO(APP.currentPeriod, APP.currentDateIdx, types);
+}
+
+function onCPOData(result) {
+  if (result.error) { showEmpty(result.error); return; }
+  APP.cpo = result;
+  APP.allData = result.data || [];
+  if (APP.user.role === 'supervisor' && APP.user.supervisorName) {
+    var sn = APP.user.supervisorName;
+    APP.allData = APP.allData.filter(function(r){ return r.supervisor === sn; });
+  }
+  populateFilters();
+  applyFilters();
+}
+
+function doRefresh() {
+  var btn = document.getElementById('refreshBtn');
+  btn.disabled = true; btn.innerHTML = '<i class="fas fa-spinner fa-spin"></i> Refreshing...';
+  google.script.run.withSuccessHandler(function(r) {
+    btn.disabled = false; btn.innerHTML = '<i class="fas fa-sync-alt"></i> Refresh';
+    document.getElementById('refreshInfo').innerHTML = 'Last refresh:<br>' + formatTimestamp(r.timestamp);
+    showToast('Data refreshed successfully', 'success');
+    loadCPO();
+  }).withFailureHandler(function(e) {
+    btn.disabled = false; btn.innerHTML = '<i class="fas fa-sync-alt"></i> Refresh';
+    showToast('Refresh failed: ' + e.message, 'error');
+  }).refreshAllData();
+}
+
+function onTypeChange() { loadCPO(); }
+
+function onDateChange() {
+  APP.currentDateIdx = parseInt(document.getElementById('datePicker').value) || 0;
+  loadCPO();
+}
+
+function populateDatePicker(period) {
+  var dates = APP.periods[period] || [];
+  var sel = document.getElementById('datePicker');
+  sel.innerHTML = '';
+  for (var i = 0; i < dates.length; i++) {
+    var opt = document.createElement('option');
+    opt.value = i; opt.textContent = dates[i];
+    sel.appendChild(opt);
+  }
+  if (dates.length > 0) { APP.currentDateIdx = 0; loadCPO(); }
+}
+
+// ========== FILTERS ==========
+function populateFilters() {
+  var chains={}, cities={}, sups={}, tpls={};
+  for (var i=0; i<APP.allData.length; i++) {
+    var r=APP.allData[i];
+    if(r.chain) chains[r.chain]=1;
+    if(r.city) cities[r.city]=1;
+    if(r.supervisor) sups[r.supervisor]=1;
+    if(r.dept3pl) r.dept3pl.split(', ').forEach(function(d){if(d) tpls[d]=1;});
+  }
+  fillSelect('filterChain', chains);
+  fillSelect('filterCity', cities);
+  if (APP.user.role !== 'supervisor') fillSelect('filterSupervisor', sups);
+  else { var s=document.getElementById('filterSupervisor'); s.innerHTML='<option value="">'+APP.user.supervisorName+'</option>'; s.disabled=true; }
+  fillSelect('filter3PL', tpls);
+}
+
+function fillSelect(id, obj) {
+  var sel = document.getElementById(id);
+  var val = sel.value;
+  var opts = '<option value="">All</option>';
+  Object.keys(obj).sort().forEach(function(k){ opts += '<option value="'+k+'">'+k+'</option>'; });
+  sel.innerHTML = opts;
+  sel.value = val;
+}
+
+function applyFilters() {
+  var chain = document.getElementById('filterChain').value;
+  var city = document.getElementById('filterCity').value;
+  var sup = document.getElementById('filterSupervisor').value;
+  var tpl = document.getElementById('filter3PL').value;
+  APP.filteredData = APP.allData.filter(function(r) {
+    if (chain && r.chain !== chain) return false;
+    if (city && r.city !== city) return false;
+    if (sup && r.supervisor !== sup) return false;
+    if (tpl && r.dept3pl.indexOf(tpl) < 0) return false;
+    return true;
+  });
+  sortData();
+  renderAll();
+}
+
+// ========== SORTING ==========
+function sortData() {
+  var col = APP.sortCol, asc = APP.sortAsc;
+  APP.filteredData.sort(function(a,b) {
+    var va = a[col], vb = b[col];
+    if (typeof va === 'string') { va = va.toLowerCase(); vb = (vb||'').toLowerCase(); }
+    if (va < vb) return asc ? -1 : 1;
+    if (va > vb) return asc ? 1 : -1;
+    return 0;
+  });
+}
+
+function onSort(col) {
+  if (APP.sortCol === col) APP.sortAsc = !APP.sortAsc;
+  else { APP.sortCol = col; APP.sortAsc = col === 'storeName' || col === 'chain'; }
+  sortData();
+  renderAll();
+}
+
+// ========== RENDER ==========
+function renderAll() {
+  if (currentView !== 'dashboard') return;
+  var data = APP.filteredData;
+  var html = '';
+  html += renderKPIs(data);
+  html += renderTable(data);
+  document.getElementById('mainContent').innerHTML = html;
+  bindTableHeaders();
+}
+
+function renderKPIs(data) {
+  var totalOrders=0, totalCost=0, totalLoaded=0, stores=data.length, pickers=0;
+  for(var i=0;i<data.length;i++){totalOrders+=data[i].orders;totalCost+=data[i].pickerCost;totalLoaded+=data[i].loadedCost;pickers+=data[i].pickerCount;}
+  var avgCPO = totalOrders>0 ? totalCost/totalOrders : 0;
+  var avgLoaded = totalOrders>0 ? totalLoaded/totalOrders : 0;
+  var label = APP.cpo ? APP.cpo.dateLabel : '';
+  return '<div style="margin-bottom:8px;font-size:13px;color:var(--muted)"><i class="fas fa-calendar-alt" style="margin-right:4px"></i>'+label+'</div>'+
+    '<div class="kpi-row">'+
+    '<div class="kpi-card"><div class="kpi-label">Total Orders</div><div class="kpi-value">'+fmt(totalOrders)+'</div><div class="kpi-sub">'+stores+' stores · '+pickers+' pickers</div></div>'+
+    '<div class="kpi-card"><div class="kpi-label">Total Picker Cost</div><div class="kpi-value">AED '+fmt(Math.round(totalCost))+'</div><div class="kpi-sub">Loaded: AED '+fmt(Math.round(totalLoaded))+'</div></div>'+
+    '<div class="kpi-card"><div class="kpi-label">CPO — Picker Only</div><div class="kpi-value" style="color:'+cpoColor(avgCPO)+'">AED '+avgCPO.toFixed(2)+'</div><div class="kpi-sub">Picker salary cost per order</div></div>'+
+    '<div class="kpi-card"><div class="kpi-label">CPO Full (Picker + Champ + Sup)</div><div class="kpi-value" style="color:'+cpoColor(avgLoaded)+'">AED '+avgLoaded.toFixed(2)+'</div><div class="kpi-sub">Total cost per order incl. management</div></div>'+
+    '</div>';
+}
+
+function renderTable(data) {
+  var cols = [
+    {key:'vendorId',label:'Vendor ID',align:'left'},
+    {key:'storeName',label:'Store',align:'left'},
+    {key:'chain',label:'Chain',align:'left'},
+    {key:'city',label:'City',align:'left'},
+    {key:'dept3pl',label:'3PL',align:'left'},
+    {key:'supervisor',label:'Supervisor',align:'left'},
+    {key:'champion',label:'Champion',align:'left'},
+    {key:'pickerCount',label:'Pickers',align:'right'},
+    {key:'orders',label:'Orders',align:'right'},
+    {key:'pickerCost',label:'Picker Cost',align:'right'},
+    {key:'pickerCPO',label:'CPO Picker Only',align:'right'},
+    {key:'loadedCPO',label:'CPO Full',align:'right'}
+  ];
+  var h = '<div class="table-wrap"><div class="table-toolbar">';
+  h += '<input class="search" placeholder="Search stores..." oninput="onSearch(this.value)" id="searchInput">';
+  h += '<div style="display:flex;gap:8px;align-items:center"><span style="font-size:12px;color:var(--muted)">'+data.length+' stores</span>';
+  h += '<button class="btn btn-sm btn-outline" onclick="exportCSV()"><i class="fas fa-download"></i> Export</button></div>';
+  h += '</div><div style="overflow-x:auto;max-height:500px;overflow-y:auto"><table><thead><tr>';
+  for(var c=0;c<cols.length;c++){
+    var sorted = APP.sortCol===cols[c].key;
+    var icon = sorted ? (APP.sortAsc?'▲':'▼') : '⇅';
+    h+='<th data-col="'+cols[c].key+'" class="'+(sorted?'sorted':'')+'" style="text-align:'+cols[c].align+'">'+cols[c].label+' <span class="sort-icon">'+icon+'</span></th>';
+  }
+  h+='</tr></thead><tbody>';
+  if(data.length===0){h+='<tr><td colspan="'+cols.length+'" style="text-align:center;padding:40px;color:var(--muted)"><i class="fas fa-inbox" style="font-size:24px;display:block;margin-bottom:8px;opacity:.3"></i>No data matches current filters</td></tr>';}
+  for(var i=0;i<data.length;i++){
+    var r=data[i];
+    h+='<tr>';
+    h+='<td>'+r.vendorId+'</td>';
+    h+='<td>'+r.storeName+'</td>';
+    h+='<td>'+r.chain+'</td>';
+    h+='<td>'+r.city+'</td>';
+    h+='<td>'+r.dept3pl+'</td>';
+    h+='<td>'+r.supervisor+'</td>';
+    h+='<td>'+r.champion+'</td>';
+    h+='<td style="text-align:right">'+r.pickerCount+'</td>';
+    h+='<td style="text-align:right;font-weight:600">'+fmt(r.orders)+'</td>';
+    h+='<td style="text-align:right">AED '+fmt(r.pickerCost)+'</td>';
+    h+='<td style="text-align:right"><span class="cpo-badge '+cpoCls(r.pickerCPO)+'">AED '+r.pickerCPO.toFixed(2)+'</span></td>';
+    h+='<td style="text-align:right"><span class="cpo-badge '+cpoCls(r.loadedCPO)+'">AED '+r.loadedCPO.toFixed(2)+'</span></td>';
+    h+='</tr>';
+  }
+  h+='</tbody></table></div></div>';
+  return h;
+}
+
+// ========== SEARCH ==========
+function onSearch(q) {
+  q = q.toLowerCase().trim();
+  if(!q){APP.filteredData=APP.allData.slice();applyFilters();return;}
+  APP.filteredData = APP.allData.filter(function(r) {
+    return r.storeName.toLowerCase().indexOf(q)>=0 || r.chain.toLowerCase().indexOf(q)>=0 || r.city.toLowerCase().indexOf(q)>=0 || r.supervisor.toLowerCase().indexOf(q)>=0 || r.champion.toLowerCase().indexOf(q)>=0 || r.vendorId.indexOf(q)>=0;
+  });
+  sortData();
+  renderAll();
+}
+
+function bindTableHeaders() {
+  document.querySelectorAll('thead th[data-col]').forEach(function(th) {
+    th.addEventListener('click', function(){ onSort(th.dataset.col); });
+  });
+}
+
+// ========== EXPORT ==========
+function exportCSV() {
+  var data = APP.filteredData;
+  var cols = ['vendorId','storeName','chain','city','dept3pl','supervisor','champion','pickerCount','orders','pickerCost','pickerCPO','loadedCost','loadedCPO'];
+  var headers = ['Vendor ID','Store','Chain','City','3PL','Supervisor','Champion','Pickers','Orders','Picker Cost (AED)','CPO Picker (AED)','Full Cost (AED)','CPO Full (AED)'];
+  var csv = headers.join(',') + '\n';
+  for(var i=0;i<data.length;i++){
+    var r=data[i];
+    csv += cols.map(function(c){var v=r[c];return typeof v==='string'?'"'+v.replace(/"/g,'""')+'"':v;}).join(',')+'\n';
+  }
+  var blob = new Blob([csv],{type:'text/csv'});
+  var a = document.createElement('a');
+  a.href = URL.createObjectURL(blob);
+  a.download = 'CPO_Report_' + (APP.cpo?APP.cpo.dateLabel:'').replace(/[^a-zA-Z0-9]/g,'_') + '.csv';
+  a.click();
+}
+
+// ========== VIEW SWITCHING ==========
+var currentView = 'dashboard';
+var currentSettingsTab = 'rates';
+
+function switchView(view) {
+  currentView = view;
+  document.querySelectorAll('#navTabs button').forEach(function(b){b.classList.remove('active')});
+  document.querySelector('#navTabs button[data-view="'+view+'"]').classList.add('active');
+  if(view === 'dashboard') {
+    document.getElementById('controlsBar').style.display = '';
+    renderAll();
+  } else {
+    document.getElementById('controlsBar').style.display = 'none';
+    renderSettingsPage();
+  }
+}
+
+function renderSettingsPage() {
+  var isAdmin = APP.user.role === 'admin';
+  var tabs = [
+    {key:'rates', icon:'fa-tags', label:'Vendor Rates'},
+    {key:'employees', icon:'fa-users-cog', label:'Employee Costs'},
+    {key:'workdays', icon:'fa-calendar-check', label:'Working Days'}
+  ];
+  if (isAdmin) {
+    tabs.push({key:'users', icon:'fa-user-shield', label:'User Access'});
+    tabs.push({key:'emails', icon:'fa-envelope', label:'Email Reports'});
+  }
+  var h = '<div class="settings-page"><div class="settings-layout"><div class="settings-sidebar">';
+  for(var i=0;i<tabs.length;i++){
+    var act = currentSettingsTab===tabs[i].key ? ' active' : '';
+    h+='<button class="'+act+'" onclick="switchSettingsTab(\''+tabs[i].key+'\')"><i class="fas '+tabs[i].icon+'"></i>'+tabs[i].label+'</button>';
+  }
+  h+='</div><div class="settings-main" id="settingsContent"></div></div></div>';
+  document.getElementById('mainContent').innerHTML = h;
+  renderSettingsTab(currentSettingsTab);
+}
+
+function switchSettingsTab(tab) {
+  currentSettingsTab = tab;
+  document.querySelectorAll('.settings-sidebar button').forEach(function(b){b.classList.remove('active')});
+  var btns = document.querySelectorAll('.settings-sidebar button');
+  for(var i=0;i<btns.length;i++){ if(btns[i].textContent.toLowerCase().indexOf(tab)>=0 || btns[i].onclick.toString().indexOf("'"+tab+"'")>=0) btns[i].classList.add('active'); }
+  renderSettingsTab(tab);
+}
+
+function renderSettingsTab(tab) {
+  var c = document.getElementById('settingsContent');
+  if(!c) return;
+  if(tab==='rates') c.innerHTML = renderRatesTab();
+  else if(tab==='employees') c.innerHTML = renderEmployeesTab();
+  else if(tab==='workdays') c.innerHTML = renderWorkdaysTab();
+  else if(tab==='users') c.innerHTML = renderUsersTab();
+  else if(tab==='emails') c.innerHTML = renderEmailsTab();
+}
+
+function renderRatesTab() {
+  var rates = APP.config.vendor_rates || [];
+  var h = '<div class="form-row">';
+  h += '<div class="form-group"><label>Vendor Name</label><input id="rateVendor" placeholder="e.g. KRH"></div>';
+  h += '<div class="form-group"><label>Base Rate (AED)</label><input id="rateAmount" type="number" placeholder="2750"></div>';
+  h += '<div class="form-group"><label>Start Month</label><input id="rateStartM" type="number" min="1" max="12" value="1"></div>';
+  h += '<div class="form-group"><label>Start Year</label><input id="rateStartY" type="number" value="2025"></div>';
+  h += '<div><button class="btn btn-primary btn-sm" onclick="addRate()"><i class="fas fa-plus"></i> Add</button></div>';
+  h += '</div>';
+  h += '<table class="config-table"><tr><th>Vendor</th><th>Rate (AED)</th><th>Effective From</th><th></th></tr>';
+  for(var i=0;i<rates.length;i++){
+    var r=rates[i];
+    h+='<tr><td>'+r.vendorName+'</td><td>'+fmt(r.baseRate)+'</td><td>'+r.effectiveStartMonth+'/'+r.effectiveStartYear+'</td>';
+    h+='<td class="actions"><button class="btn btn-sm btn-outline" onclick="deleteRate(\''+r.id+'\')"><i class="fas fa-trash"></i></button></td></tr>';
+  }
+  h+='</table>';
+  return h;
+}
+
+function addRate() {
+  var entry = { vendorName: document.getElementById('rateVendor').value.trim(), baseRate: parseFloat(document.getElementById('rateAmount').value)||0,
+    effectiveStartMonth: parseInt(document.getElementById('rateStartM').value)||1, effectiveStartYear: parseInt(document.getElementById('rateStartY').value)||2025, effectiveEndMonth:null, effectiveEndYear:null };
+  if(!entry.vendorName){showToast('Enter vendor name','error');return;}
+  google.script.run.withSuccessHandler(function(r){APP.config.vendor_rates=r;renderSettingsTab('rates');showToast('Rate added','success');}).addConfigEntry('vendor_rates',entry);
+}
+function deleteRate(id) {
+  google.script.run.withSuccessHandler(function(r){APP.config.vendor_rates=r;renderSettingsTab('rates');showToast('Rate deleted','success');}).deleteConfigEntry('vendor_rates',id);
+}
+
+function renderEmployeesTab() {
+  var costs = APP.config.employee_costs || [];
+  var h = '<div class="form-row">';
+  h += '<div class="form-group"><label>Role</label><select id="empRole"><option>Champion</option><option>City Supervisor</option></select></div>';
+  h += '<div class="form-group"><label>Monthly Cost (AED)</label><input id="empCost" type="number" placeholder="6400"></div>';
+  h += '<div class="form-group"><label>Start Month</label><input id="empStartM" type="number" min="1" max="12" value="1"></div>';
+  h += '<div class="form-group"><label>Start Year</label><input id="empStartY" type="number" value="2025"></div>';
+  h += '<div><button class="btn btn-primary btn-sm" onclick="addEmp()"><i class="fas fa-plus"></i> Add</button></div>';
+  h += '</div>';
+  h += '<table class="config-table"><tr><th>Role</th><th>Cost (AED)</th><th>Effective From</th><th></th></tr>';
+  for(var i=0;i<costs.length;i++){
+    var r=costs[i];
+    h+='<tr><td>'+r.role+'</td><td>'+fmt(r.baseCost)+'</td><td>'+r.effectiveStartMonth+'/'+r.effectiveStartYear+'</td>';
+    h+='<td class="actions"><button class="btn btn-sm btn-outline" onclick="deleteEmp(\''+r.id+'\')"><i class="fas fa-trash"></i></button></td></tr>';
+  }
+  h+='</table>';
+  return h;
+}
+function addEmp() {
+  var entry = { role: document.getElementById('empRole').value, baseCost: parseFloat(document.getElementById('empCost').value)||0,
+    effectiveStartMonth: parseInt(document.getElementById('empStartM').value)||1, effectiveStartYear: parseInt(document.getElementById('empStartY').value)||2025, effectiveEndMonth:null, effectiveEndYear:null };
+  google.script.run.withSuccessHandler(function(r){APP.config.employee_costs=r;renderSettingsTab('employees');showToast('Cost added','success');}).addConfigEntry('employee_costs',entry);
+}
+function deleteEmp(id) {
+  google.script.run.withSuccessHandler(function(r){APP.config.employee_costs=r;renderSettingsTab('employees');showToast('Deleted','success');}).deleteConfigEntry('employee_costs',id);
+}
+
+function renderWorkdaysTab() {
+  var days = APP.config.working_days || [];
+  var h = '<div class="form-row">';
+  h += '<div class="form-group"><label>Month</label><input id="wdMonth" type="number" min="1" max="12"></div>';
+  h += '<div class="form-group"><label>Year</label><input id="wdYear" type="number" value="2026"></div>';
+  h += '<div class="form-group"><label>Working Days</label><input id="wdDays" type="number"></div>';
+  h += '<div><button class="btn btn-primary btn-sm" onclick="addWD()"><i class="fas fa-plus"></i> Add</button></div>';
+  h += '</div>';
+  h += '<p style="font-size:12px;color:var(--muted);margin-bottom:12px">Defaults: Feb=24, 31-day months=27, 30-day months=26. Only add overrides here.</p>';
+  h += '<table class="config-table"><tr><th>Month</th><th>Year</th><th>Days</th><th></th></tr>';
+  for(var i=0;i<days.length;i++){
+    h+='<tr><td>'+days[i].month+'</td><td>'+days[i].year+'</td><td>'+days[i].workingDays+'</td>';
+    h+='<td class="actions"><button class="btn btn-sm btn-outline" onclick="deleteWD(\''+days[i].id+'\')"><i class="fas fa-trash"></i></button></td></tr>';
+  }
+  h+='</table>';
+  return h;
+}
+function addWD() {
+  var entry = { month: parseInt(document.getElementById('wdMonth').value), year: parseInt(document.getElementById('wdYear').value), workingDays: parseInt(document.getElementById('wdDays').value) };
+  if(!entry.month||!entry.year||!entry.workingDays){showToast('Fill all fields','error');return;}
+  google.script.run.withSuccessHandler(function(r){APP.config.working_days=r;renderSettingsTab('workdays');showToast('Added','success');}).addConfigEntry('working_days',entry);
+}
+function deleteWD(id) {
+  google.script.run.withSuccessHandler(function(r){APP.config.working_days=r;renderSettingsTab('workdays');showToast('Deleted','success');}).deleteConfigEntry('working_days',id);
+}
+
+function renderUsersTab() {
+  if(APP.user.role !== 'admin') return '<p style="color:var(--muted)">Only admins can manage users.</p>';
+  var h = '<h3 style="font-size:16px;font-weight:600;color:var(--dark);margin-bottom:16px;padding-bottom:12px;border-bottom:1px solid var(--border)"><i class="fas fa-user-shield" style="color:var(--primary);margin-right:8px"></i>User Access Management</h3>';
+  h += '<div class="role-info-box">';
+  h += '<strong>Access Roles:</strong>';
+  h += '<div class="role-item" style="margin-top:6px"><span class="role-dot" style="background:#1d4ed8"></span><strong>Admin</strong> — Full access. Can edit config, manage users, set up email triggers, and view all stores.</div>';
+  h += '<div class="role-item"><span class="role-dot" style="background:#92400e"></span><strong>Manager</strong> — View-only access to all stores and data. Cannot edit settings or manage users.</div>';
+  h += '<div class="role-item"><span class="role-dot" style="background:#065f46"></span><strong>Supervisor</strong> — Can only see stores assigned to them in the Master Champion sheet. Select their name below when adding.</div>';
+  h += '</div>';
+  h += '<div style="background:var(--card);border:1.5px solid var(--border);border-radius:var(--radius);padding:16px;margin-bottom:20px">';
+  h += '<div style="font-size:13px;font-weight:600;color:var(--dark);margin-bottom:12px"><i class="fas fa-user-plus" style="color:var(--primary);margin-right:6px"></i>Add New User</div>';
+  h += '<div class="form-row" style="margin-bottom:0">';
+  h += '<div class="form-group"><label>Email Address</label><input id="userEmailInput" placeholder="user@talabat.com"></div>';
+  h += '<div class="form-group"><label>Role</label><select id="userRoleInput" onchange="onUserRoleChange()"><option value="admin">Admin</option><option value="manager">Manager</option><option value="supervisor">Supervisor</option></select></div>';
+  h += '<div class="form-group" id="supNameGroup" style="display:none"><label>Supervisor Name</label><select id="userSupName"><option value="">Select supervisor...</option></select></div>';
+  h += '<div><button class="btn btn-primary" onclick="addUserAction()"><i class="fas fa-paper-plane"></i> Add &amp; Send Invite</button></div>';
+  h += '</div>';
+  h += '<div style="font-size:11px;color:var(--muted);margin-top:8px"><i class="fas fa-info-circle" style="margin-right:4px"></i>A welcome email with dashboard link will be sent automatically to the user.</div>';
+  h += '</div>';
+  h += '<div id="usersTableWrap"><div class="loading"><div class="spinner"></div></div></div>';
+  loadUsersTable();
+  google.script.run.withSuccessHandler(function(sups){
+    APP.supervisorList = sups || [];
+  }).getSupervisorList();
+  return h;
+}
+
+function loadUsersTable() {
+  google.script.run.withSuccessHandler(function(users){
+    var myEmail = (APP.user.email || '').toLowerCase();
+    var t = '<table class="config-table">';
+    t += '<tr><th>User</th><th>Role</th><th>Supervisor</th><th>Status</th><th>Added</th><th style="text-align:right">Actions</th></tr>';
+    for(var i=0;i<users.length;i++){
+      var u=users[i];
+      var isMe = u.email === myEmail;
+      var isRevoked = u.status === 'revoked';
+      var cls = u.role==='admin'?'tag-admin':u.role==='manager'?'tag-manager':u.role==='supervisor'?'tag-supervisor':'tag-viewer';
+      var statusTag = isRevoked ? '<span class="tag" style="background:#fef2f2;color:#dc2626">Revoked</span>' : '<span class="tag" style="background:#ecfdf5;color:#059669">Active</span>';
+      var addedDate = u.addedAt ? new Date(u.addedAt).toLocaleDateString('en-AE',{day:'2-digit',month:'short',year:'numeric'}) : '—';
+      t+='<tr style="'+(isRevoked?'opacity:.6':'')+'">';
+      t+='<td><div style="font-weight:500">'+u.email+'</div>'+(isMe?'<div style="font-size:10px;color:var(--primary);font-weight:600">YOU</div>':'')+'</td>';
+      t+='<td><span class="tag '+cls+'">'+u.role+'</span></td>';
+      t+='<td>'+(u.supervisorName||'—')+'</td>';
+      t+='<td>'+statusTag+'</td>';
+      t+='<td style="font-size:11px;color:var(--muted)">'+addedDate+'</td>';
+      t+='<td class="actions" style="justify-content:flex-end">';
+      if (!isMe) {
+        t+='<button class="btn btn-sm btn-outline" onclick="editUserAction(\''+u.email+'\',\''+u.role+'\',\''+(u.supervisorName||'').replace(/'/g,"\\'")+'\')" title="Edit role"><i class="fas fa-edit"></i></button>';
+        if (isRevoked) {
+          t+='<button class="btn btn-sm btn-outline" style="color:var(--success);border-color:var(--success)" onclick="reinstateUserAction(\''+u.email+'\')" title="Reinstate access"><i class="fas fa-undo"></i></button>';
+        } else {
+          t+='<button class="btn btn-sm btn-outline" style="color:var(--warning);border-color:var(--warning)" onclick="revokeUserAction(\''+u.email+'\')" title="Revoke access"><i class="fas fa-ban"></i></button>';
+          t+='<button class="btn btn-sm btn-outline" onclick="resendInviteAction(\''+u.email+'\')" title="Resend invite email"><i class="fas fa-paper-plane"></i></button>';
+        }
+        t+='<button class="btn btn-sm btn-outline" style="color:var(--danger);border-color:var(--danger)" onclick="removeUserAction(\''+u.email+'\')" title="Delete permanently"><i class="fas fa-trash"></i></button>';
+      }
+      t+='</td></tr>';
+    }
+    t+='</table>';
+    var wrap = document.getElementById('usersTableWrap');
+    if (wrap) wrap.innerHTML = t;
+  }).loadUsers();
+}
+
+function onUserRoleChange() {
+  var role = document.getElementById('userRoleInput').value;
+  var grp = document.getElementById('supNameGroup');
+  if (role === 'supervisor') {
+    grp.style.display = '';
+    var sel = document.getElementById('userSupName');
+    sel.innerHTML = '<option value="">Select supervisor...</option>';
+    (APP.supervisorList || []).forEach(function(s){ sel.innerHTML += '<option value="'+s+'">'+s+'</option>'; });
+  } else { grp.style.display = 'none'; }
+}
+
+function addUserAction() {
+  var email = document.getElementById('userEmailInput').value.trim();
+  var role = document.getElementById('userRoleInput').value;
+  var supName = document.getElementById('userSupName') ? document.getElementById('userSupName').value : '';
+  if(!email){showToast('Enter email address','error');return;}
+  if(role==='supervisor' && !supName){showToast('Select a supervisor name for supervisor role','error');return;}
+  showToast('Adding user and sending invite...','success');
+  google.script.run.withSuccessHandler(function(r){
+    if(r && r.error){showToast(r.error,'error');return;}
+    showToast('User added — invite email sent to '+email,'success');
+    document.getElementById('userEmailInput').value = '';
+    loadUsersTable();
+  }).withFailureHandler(function(e){showToast('Error: '+e.message,'error');}).addUser(email, role, supName);
+}
+
+function editUserAction(email, currentRole, currentSup) {
+  var supOpts = '';
+  if (APP.supervisorList && APP.supervisorList.length > 0) {
+    supOpts = '<option value="">— none —</option>';
+    APP.supervisorList.forEach(function(s){ supOpts += '<option value="'+s+'"'+(s===currentSup?' selected':'')+'>'+s+'</option>'; });
+  }
+  var html = '<div style="padding:20px;background:var(--card);border-radius:var(--radius);border:1.5px solid var(--border);margin-bottom:16px">';
+  html += '<div style="font-size:14px;font-weight:600;color:var(--dark);margin-bottom:12px"><i class="fas fa-edit" style="color:var(--primary);margin-right:6px"></i>Edit User: '+email+'</div>';
+  html += '<div class="form-row" style="margin-bottom:0">';
+  html += '<div class="form-group"><label>New Role</label><select id="editRoleSelect" onchange="onEditRoleChange()"><option value="admin"'+(currentRole==='admin'?' selected':'')+'>Admin</option><option value="manager"'+(currentRole==='manager'?' selected':'')+'>Manager</option><option value="supervisor"'+(currentRole==='supervisor'?' selected':'')+'>Supervisor</option></select></div>';
+  html += '<div class="form-group" id="editSupGroup" style="'+(currentRole==='supervisor'?'':'display:none')+'"><label>Supervisor Name</label><select id="editSupSelect">'+supOpts+'</select></div>';
+  html += '<div><button class="btn btn-primary btn-sm" onclick="saveEditUser(\''+email+'\')"><i class="fas fa-check"></i> Save</button> <button class="btn btn-outline btn-sm" onclick="loadUsersTable()"><i class="fas fa-times"></i> Cancel</button></div>';
+  html += '</div>';
+  html += '<div style="font-size:11px;color:var(--muted);margin-top:8px"><i class="fas fa-envelope" style="margin-right:4px"></i>If the role changes, the user will receive a notification email.</div>';
+  html += '</div>';
+  var wrap = document.getElementById('usersTableWrap');
+  wrap.innerHTML = html + wrap.innerHTML;
+  wrap.scrollTop = 0;
+}
+
+function onEditRoleChange() {
+  var role = document.getElementById('editRoleSelect').value;
+  document.getElementById('editSupGroup').style.display = role === 'supervisor' ? '' : 'none';
+}
+
+function saveEditUser(email) {
+  var role = document.getElementById('editRoleSelect').value;
+  var supName = document.getElementById('editSupSelect') ? document.getElementById('editSupSelect').value : '';
+  if(role==='supervisor' && !supName){showToast('Select supervisor name','error');return;}
+  showToast('Updating role...','success');
+  google.script.run.withSuccessHandler(function(r){
+    if(r && r.error){showToast(r.error,'error');return;}
+    showToast('Role updated — notification sent to '+email,'success');
+    loadUsersTable();
+  }).withFailureHandler(function(e){showToast('Error: '+e.message,'error');}).updateUserRole(email, role, supName);
+}
+
+var confirmCallback = null;
+function showConfirm(opts, cb) {
+  var el = document.getElementById('confirmModal');
+  var iconEl = document.getElementById('confirmIcon');
+  var icons = { warn:'fa-exclamation-triangle', danger:'fa-trash-alt', info:'fa-paper-plane', success:'fa-undo' };
+  iconEl.className = 'confirm-icon ' + (opts.type || 'warn');
+  iconEl.innerHTML = '<i class="fas ' + (icons[opts.type] || icons.warn) + '"></i>';
+  document.getElementById('confirmTitle').textContent = opts.title || 'Confirm';
+  document.getElementById('confirmMsg').innerHTML = opts.msg || '';
+  var okBtn = document.getElementById('confirmOk');
+  okBtn.textContent = opts.okText || 'Confirm';
+  okBtn.className = 'btn ' + (opts.type === 'danger' ? 'btn-dark' : 'btn-primary');
+  if (opts.type === 'danger') okBtn.style.background = 'var(--danger)';
+  else okBtn.style.background = '';
+  confirmCallback = cb;
+  el.classList.add('show');
+}
+function closeConfirm(ok) {
+  document.getElementById('confirmModal').classList.remove('show');
+  if (ok && confirmCallback) confirmCallback();
+  confirmCallback = null;
+}
+
+function revokeUserAction(email) {
+  showConfirm({ type:'warn', title:'Revoke Access', msg:'Revoke access for <strong>'+email+'</strong>?<br><br>They will be notified by email and will no longer be able to access the dashboard.', okText:'Revoke Access' }, function(){
+    showToast('Revoking access...','success');
+    google.script.run.withSuccessHandler(function(r){
+      if(r && r.error){showToast(r.error,'error');return;}
+      showToast('Access revoked for '+email,'success');
+      loadUsersTable();
+    }).withFailureHandler(function(e){showToast('Error: '+e.message,'error');}).revokeUser(email);
+  });
+}
+
+function reinstateUserAction(email) {
+  showConfirm({ type:'success', title:'Reinstate Access', msg:'Reinstate access for <strong>'+email+'</strong>?<br><br>They will be notified by email and can access the dashboard again.', okText:'Reinstate' }, function(){
+    showToast('Reinstating access...','success');
+    google.script.run.withSuccessHandler(function(r){
+      if(r && r.error){showToast(r.error,'error');return;}
+      showToast('Access reinstated for '+email,'success');
+      loadUsersTable();
+    }).withFailureHandler(function(e){showToast('Error: '+e.message,'error');}).reinstateUser(email);
+  });
+}
+
+function resendInviteAction(email) {
+  showConfirm({ type:'info', title:'Resend Invite', msg:'Send a new invite email to <strong>'+email+'</strong> with the dashboard access link?', okText:'Send Invite' }, function(){
+    showToast('Sending invite...','success');
+    google.script.run.withSuccessHandler(function(r){
+      if(r && r.error){showToast(r.error,'error');return;}
+      showToast('Invite resent to '+email,'success');
+    }).withFailureHandler(function(e){showToast('Error: '+e.message,'error');}).resendInvite(email);
+  });
+}
+
+function removeUserAction(email) {
+  showConfirm({ type:'danger', title:'Delete User Permanently', msg:'Permanently remove <strong>'+email+'</strong> from the system?<br><br>This cannot be undone. The user will NOT be notified.', okText:'Delete Permanently' }, function(){
+    google.script.run.withSuccessHandler(function(){showToast('User permanently removed','success');loadUsersTable();}).removeUser(email);
+  });
+}
+
+function renderEmailsTab() {
+  if(APP.user.role !== 'admin') return '<p style="color:var(--muted)">Only admins can manage email settings.</p>';
+  var h = '<h3 style="font-size:14px;margin-bottom:12px">Email Report Triggers</h3>';
+  h += '<p style="font-size:12px;color:var(--muted);margin-bottom:16px">Supervisors will receive their area\'s CPO performance report via email. High CPO stores are highlighted in red.</p>';
+  h += '<div style="display:flex;gap:12px;margin-bottom:20px">';
+  h += '<button class="btn btn-primary" onclick="setupTrigger(\'weekly\')"><i class="fas fa-calendar-week"></i> Enable Weekly (Sun 8AM)</button>';
+  h += '<button class="btn btn-primary" onclick="setupTrigger(\'monthly\')"><i class="fas fa-calendar-alt"></i> Enable Monthly (1st 8AM)</button>';
+  h += '</div>';
+  h += '<h4 style="font-size:13px;margin-bottom:8px">Test Email</h4>';
+  h += '<div class="form-row">';
+  h += '<div class="form-group"><label>Recipient</label><input id="testEmailTo" placeholder="your@email.com" value="'+(APP.user.email||'')+'"></div>';
+  h += '<div class="form-group"><label>Type</label><select id="testEmailType"><option value="weekly">Weekly</option><option value="monthly">Monthly</option></select></div>';
+  h += '<div><button class="btn btn-dark btn-sm" onclick="sendTestEmailAction()"><i class="fas fa-paper-plane"></i> Send Test</button></div>';
+  h += '</div>';
+  h += '<div id="triggersInfo" style="margin-top:16px"></div>';
+  google.script.run.withSuccessHandler(function(triggers){
+    var t='<h4 style="font-size:13px;margin-bottom:8px">Active Triggers</h4>';
+    if(triggers.length===0) t+='<p style="font-size:12px;color:var(--muted)">No triggers set up yet.</p>';
+    else { t+='<ul style="font-size:12px">'; for(var i=0;i<triggers.length;i++) t+='<li>'+triggers[i].func+' ('+triggers[i].type+')</li>'; t+='</ul>'; }
+    document.getElementById('triggersInfo').innerHTML = t;
+  }).getActiveTriggers();
+  return h;
+}
+function setupTrigger(type) {
+  var fn = type==='weekly' ? 'setupWeeklyTrigger' : 'setupMonthlyTrigger';
+  google.script.run.withSuccessHandler(function(r){showToast(r.message,'success');renderSettingsTab('emails');}).withFailureHandler(function(e){showToast('Error: '+e.message,'error');})[fn]();
+}
+function sendTestEmailAction() {
+  var to = document.getElementById('testEmailTo').value.trim();
+  var type = document.getElementById('testEmailType').value;
+  if(!to){showToast('Enter email','error');return;}
+  showToast('Sending test email...','success');
+  google.script.run.withSuccessHandler(function(){showToast('Test email sent!','success');}).withFailureHandler(function(e){showToast('Error: '+e.message,'error');}).sendTestEmail(to,type);
+}
+
+// ========== HELPERS ==========
+function fmt(n){if(n==null)return'0';return String(Math.round(n)).replace(/\B(?=(\d{3})+(?!\d))/g,',');}
+function cpoColor(v){if(v<=0)return'var(--muted)';if(v<5)return'var(--success)';if(v<10)return'var(--warning)';return'var(--danger)';}
+function cpoCls(v){if(v<=0)return'';if(v<5)return'cpo-low';if(v<10)return'cpo-med';return'cpo-high';}
+function formatTimestamp(ts){if(!ts)return'—';var d=new Date(ts);return d.toLocaleDateString('en-AE',{day:'2-digit',month:'short',year:'numeric'})+' '+d.toLocaleTimeString('en-AE',{hour:'2-digit',minute:'2-digit'});}
+function showLoading(){document.getElementById('mainContent').innerHTML='<div class="loading"><div class="spinner"></div><div style="font-size:14px;color:var(--muted)">Computing CPO...</div></div>';}
+function showEmpty(msg){document.getElementById('mainContent').innerHTML='<div class="empty-state"><i class="fas fa-chart-pie"></i><p>'+msg+'</p><button class="btn btn-primary" onclick="doRefresh()" style="margin-top:12px"><i class="fas fa-sync-alt"></i> Refresh Data</button></div>';}
+function showToast(msg,type){var t=document.getElementById('toast');t.textContent=msg;t.className='toast toast-'+(type||'success')+' show';setTimeout(function(){t.classList.remove('show');},3000);}
+function onError(e){showToast('Error: '+(e.message||e),'error');showEmpty('An error occurred. Try refreshing.');}
+</script>
+</body>
+</html>
