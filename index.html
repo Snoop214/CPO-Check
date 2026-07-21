@@ -234,10 +234,21 @@ if(typeof google==='undefined'||!google.script||window.location.hostname.indexOf
       return Promise.resolve({labels:[],datasets:[],tableData:[]});
     },
     loadUsers:function(){
-      return Promise.resolve(window._staticUsers||[]);
+      return _fetchJSON('config/users.json').catch(function(){return window._staticUsers||[];});
     },
     getSupervisorList:function(){
       return Promise.resolve([]);
+    },
+    getPrecomputeStatus:function(){
+      return _fetchJSON('data/meta.json').then(function(m){
+        return {done:true,timestamp:m.timestamp,fileCount:null,log:[]};
+      }).catch(function(){return {done:true,timestamp:null,log:[]};});
+    },
+    getFetchLog:function(){
+      return Promise.resolve([]);
+    },
+    getAutoFetchConfig:function(){
+      return Promise.resolve({hours:[6,12],activeTriggers:2,note:'GitHub Actions cron: 06:00 and 12:00 UTC'});
     },
   };
   // Build the google.script.run shim
