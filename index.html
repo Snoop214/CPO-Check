@@ -250,7 +250,49 @@ if(typeof google==='undefined'||!google.script||window.location.hostname.indexOf
     getAutoFetchConfig:function(){
       return Promise.resolve({hours:[6,12],activeTriggers:2,note:'GitHub Actions cron: 06:00 and 12:00 UTC'});
     },
+    addConfigEntry:function(section,entry){return _ghWriteConfig(function(cfg){var arr=cfg[section]||[];if(!entry.id)entry.id=Date.now().toString();arr.push(entry);cfg[section]=arr;return arr;},'Add '+section);},
+    updateConfigEntry:function(section,id,fields){return _ghWriteConfig(function(cfg){var arr=(cfg[section]||[]).map(function(e){return e.id===id?Object.assign({},e,fields):e;});cfg[section]=arr;return arr;},'Update '+section);},
+    deleteConfigEntry:function(section,id){return _ghWriteConfig(function(cfg){var arr=(cfg[section]||[]).filter(function(e){return e.id!==id;});cfg[section]=arr;return arr;},'Delete '+section);},
+    saveOptimizerConfig:function(opt){return _ghWriteConfig(function(cfg){cfg.optimizer=opt;return opt;},'Update optimizer');},
+    addUser:function(email,role,sup){return _ghWriteUsers(function(u){if(u.some(function(x){return x.email===email;}))return {_err:'User already exists'};u.push({email:email,role:role,name:'',supervisorName:sup||''});return {};})},
+    revokeUser:function(email){return _ghWriteUsers(function(u){return u.map(function(x){return x.email===email?Object.assign({},x,{status:'revoked'}):x;});});},
+    reinstateUser:function(email){return _ghWriteUsers(function(u){return u.map(function(x){return x.email===email?Object.assign({},x,{status:'active'}):x;});});},
+    removeUser:function(email){return _ghWriteUsers(function(u){return u.filter(function(x){return x.email!==email;});});},
   };
+
+  // GitHub API helpers for config writes
+  var _GH_API='https://api.github.com/repos/Snoop214/CPO-Check/contents/';
+  function _ghTok(){return localStorage.getItem('cpo_gh_token');}
+  function _ghHead(){return{'Authorization':'token '+_ghTok(),'Accept':'application/vnd.github.v3+json','Content-Type':'application/json'};}
+  function _ghReadRaw(path){
+    if(!_ghTok())return Promise.reject(new Error('No GitHub token — go to Settings → GitHub Token'));
+    return fetch(_GH_API+path,{headers:_ghHead()}).then(function(r){return r.json();});
+  }
+  function _ghReadJSON(path){
+    return _ghReadRaw(path).then(function(f){
+      return{sha:f.sha,data:JSON.parse(decodeURIComponent(escape(atob(f.content.replace(/\n/g,'')))))};
+    });
+  }
+  function _ghPut(path,sha,content,msg){
+    var encoded=btoa(unescape(encodeURIComponent(JSON.stringify(content,null,2))));
+    return fetch(_GH_API+path,{method:'PUT',headers:_ghHead(),
+      body:JSON.stringify({message:msg||'Update via CPO Check',content:encoded,sha:sha})
+    }).then(function(r){if(!r.ok)return r.json().then(function(e){throw new Error(e.message||'GitHub write failed');});return r.json();});
+  }
+  function _ghWriteConfig(mutate,msg){
+    return _ghReadJSON('config/app_config.json').then(function(f){
+      var result=mutate(f.data);
+      return _ghPut('config/app_config.json',f.sha,f.data,msg).then(function(){return result;});
+    });
+  }
+  function _ghWriteUsers(mutate){
+    return _ghReadJSON('config/users.json').then(function(f){
+      var result=mutate(f.data);
+      if(result&&result._err)return{error:result._err};
+      var users=Array.isArray(result)?result:f.data;
+      return _ghPut('config/users.json',f.sha,users,'Update users').then(function(){window._staticUsers=users;return Array.isArray(result)?{}:result;});
+    });
+  }
   // Build the google.script.run shim
   window.google={script:{run:{}}};
   (function(){
@@ -2406,6 +2448,7 @@ function renderSettings(){
     tabs.push({k:'fetchall',i:'fa-database',l:'Fetch All Data'});
     tabs.push({k:'users',i:'fa-user-shield',l:'User Access'});
     tabs.push({k:'emails',i:'fa-envelope',l:'Email Reports'});
+    if(window._staticMode)tabs.push({k:'ghtoken',i:'fa-key',l:'GitHub Token'});
   }
   var html='<div class="settings-page"><div class="settings-layout"><div class="settings-sidebar">';
   tabs.forEach(function(t){html+='<button data-tab="'+t.k+'" class="'+(APP.currentSettingsTab===t.k?'active':'')+'" onclick="switchSettings(\''+t.k+'\')"><i class="fas '+t.i+'"></i>'+t.l+'</button>';});
@@ -2429,6 +2472,7 @@ function renderSettingsTab(tab){
   else if(tab==='fetchall')c.innerHTML=renderFetchAllTab();
   else if(tab==='users')c.innerHTML=renderUsersTab();
   else if(tab==='emails')c.innerHTML=renderEmailsTab();
+  else if(tab==='ghtoken'){c.innerHTML=renderGhTokenTab();}
 }
 
 // Vendor Rates — now includes Hours/Day column
@@ -3056,6 +3100,36 @@ function sendInviteAction(email,role){
 function revokeUserAction(email){showConfirm('Revoke access for '+email+'?',function(){google.script.run.withSuccessHandler(function(){showToast('Revoked','success');loadUsersTable();}).revokeUser(email);});}
 function reinstateUserAction(email){google.script.run.withSuccessHandler(function(){showToast('Reinstated','success');loadUsersTable();}).reinstateUser(email);}
 function removeUserAction(email){showConfirm('Permanently delete '+email+'?',function(){google.script.run.withSuccessHandler(function(){showToast('Removed','success');loadUsersTable();}).removeUser(email);});}
+
+function renderGhTokenTab(){
+  var stored=localStorage.getItem('cpo_gh_token')||'';
+  var h='<div class="s-title"><i class="fas fa-key" style="color:var(--primary);margin-right:7px"></i>GitHub Token</div>';
+  h+='<div style="background:#fef3c7;border:1.5px solid #fcd34d;border-radius:var(--radius);padding:12px 16px;font-size:12px;color:#92400e;margin-bottom:16px">'
+    +'<i class="fas fa-info-circle" style="margin-right:6px"></i>'
+    +'This token is stored <strong>only in your browser</strong> (localStorage). It is never committed to the repo or shared with anyone.'
+    +'</div>';
+  h+='<div class="form-row"><div class="form-group" style="flex:1"><label>Personal Access Token (repo scope)</label>'
+    +'<input id="ghTokenInput" type="password" value="'+stored+'" placeholder="ghp_..." style="font-family:monospace;letter-spacing:1px"></div></div>';
+  h+='<div style="display:flex;gap:8px;margin-top:8px">'
+    +'<button class="btn btn-primary" onclick="saveGhToken()"><i class="fas fa-save" style="margin-right:5px"></i>Save Token</button>';
+  if(stored)h+='<button class="btn btn-outline" style="color:var(--danger)" onclick="clearGhToken()"><i class="fas fa-trash" style="margin-right:5px"></i>Clear</button>';
+  h+='</div>';
+  if(stored)h+='<div style="margin-top:14px;font-size:12px;color:#059669;font-weight:600"><i class="fas fa-check-circle" style="margin-right:5px"></i>Token is set — all Settings changes save directly to GitHub.</div>';
+  else h+='<div style="margin-top:14px;font-size:12px;color:#dc2626"><i class="fas fa-exclamation-circle" style="margin-right:5px"></i>No token set — config edits will fail until you save one.</div>';
+  return h;
+}
+function saveGhToken(){
+  var t=(document.getElementById('ghTokenInput').value||'').trim();
+  if(!t){showToast('Paste your token first','error');return;}
+  localStorage.setItem('cpo_gh_token',t);
+  showToast('Token saved — you can now edit all settings','success');
+  renderSettingsTab('ghtoken');
+}
+function clearGhToken(){
+  localStorage.removeItem('cpo_gh_token');
+  showToast('Token cleared','success');
+  renderSettingsTab('ghtoken');
+}
 
 function renderEmailsTab(){
   if((APP.user.role||'').toLowerCase()!=='admin')return'<p style="color:var(--muted)">Admins only.</p>';
