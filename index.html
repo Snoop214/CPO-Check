@@ -2377,7 +2377,7 @@ function switchView(view){
 // SETTINGS
 // ================================================================
 function renderSettings(){
-  var isAdmin=APP.user.role==='admin';
+  var isAdmin=(APP.user.role||'').toLowerCase()==='admin';
   var tabs=[
     {k:'rates',i:'fa-tags',l:'Vendor Rates'},
     {k:'employees',i:'fa-users-cog',l:'Employee Costs'},
@@ -2415,7 +2415,7 @@ function renderSettingsTab(tab){
 
 // Vendor Rates — now includes Hours/Day column
 function renderFetchAllTab(){
-  if(APP.user.role!=='admin')return'<p style="color:var(--muted)">Admins only.</p>';
+  if((APP.user.role||'').toLowerCase()!=='admin')return'<p style="color:var(--muted)">Admins only.</p>';
   var h='<div class="s-title"><i class="fas fa-database" style="color:var(--primary);margin-right:7px"></i>Fetch All Data</div>';
 
   // Status card — Trigger Fetch button is built inside by getPrecomputeStatus callback
@@ -2984,7 +2984,7 @@ function deleteHolidayEntry(id){
 }
 
 function renderUsersTab(){
-  if(APP.user.role!=='admin')return'<p style="color:var(--muted)">Admins only.</p>';
+  if((APP.user.role||'').toLowerCase()!=='admin')return'<p style="color:var(--muted)">Admins only.</p>';
   var h='<div class="s-title">User Access</div>';
   h+='<div style="background:var(--card);border:1.5px solid var(--border);border-radius:var(--radius);padding:14px;margin-bottom:16px">';
   h+='<div class="form-row"><div class="form-group"><label>Email</label><input id="uEmail" placeholder="user@talabat.com"></div>';
@@ -3033,7 +3033,7 @@ function reinstateUserAction(email){google.script.run.withSuccessHandler(functio
 function removeUserAction(email){showConfirm('Permanently delete '+email+'?',function(){google.script.run.withSuccessHandler(function(){showToast('Removed','success');loadUsersTable();}).removeUser(email);});}
 
 function renderEmailsTab(){
-  if(APP.user.role!=='admin')return'<p style="color:var(--muted)">Admins only.</p>';
+  if((APP.user.role||'').toLowerCase()!=='admin')return'<p style="color:var(--muted)">Admins only.</p>';
   var h='<div class="s-title">Email Reports</div>';
   h+='<div style="display:flex;gap:10px;margin-bottom:16px">';
   h+='<button class="btn btn-primary" onclick="setupTrigger(\'weekly\')"><i class="fas fa-calendar-week"></i> Enable Weekly (Sun 8AM)</button>';
