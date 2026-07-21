@@ -1,0 +1,12 @@
+# Python
+__pycache__/
+*.py[cod]
+*.egg-info/
+.venv/
+venv/
+
+# Local credentials — NEVER commit this
+scripts/credentials.json
+
+# macOS
+.DS_Store

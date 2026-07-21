@@ -1,0 +1,8 @@
+{
+  "name": "cpo-presentation",
+  "version": "1.0.0",
+  "main": "generate-management.js",
+  "dependencies": {
+    "pptxgenjs": "^4.0.1"
+  }
+}

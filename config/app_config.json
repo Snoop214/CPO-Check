@@ -1,0 +1,39 @@
+{
+  "vendor_rates": [
+    {
+      "vendorName": "Bosta",
+      "baseRate": 2750,
+      "hoursPerDay": 10,
+      "effectiveStartMonth": 1,
+      "effectiveStartYear": 2024
+    },
+    {
+      "vendorName": "iMile",
+      "baseRate": 2750,
+      "hoursPerDay": 10,
+      "effectiveStartMonth": 1,
+      "effectiveStartYear": 2024
+    }
+  ],
+  "employee_costs": [
+    {
+      "role": "Champion",
+      "baseCost": 16000,
+      "effectiveStartMonth": 1,
+      "effectiveStartYear": 2024
+    },
+    {
+      "role": "City Supervisor",
+      "baseCost": 25000,
+      "effectiveStartMonth": 1,
+      "effectiveStartYear": 2024
+    }
+  ],
+  "working_days": [],
+  "optimizer": {
+    "utrThreshold": 5,
+    "cpoTarget": 3.5,
+    "relieverAttendancePct": 25,
+    "closureMaxKm": 5
+  }
+}

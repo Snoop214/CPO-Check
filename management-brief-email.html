@@ -1,0 +1,412 @@
+<!DOCTYPE html>
+<html>
+<head><meta charset="utf-8"></head>
+<body style="margin:0;padding:0;background:#e8e8e8;font-family:'Segoe UI',Arial,sans-serif;">
+
+<table width="100%" cellpadding="0" cellspacing="0" border="0" style="background:#e8e8e8;">
+<tr><td align="center" style="padding:30px 20px;">
+
+<!-- MAIN EMAIL BOX -->
+<table width="800" cellpadding="0" cellspacing="0" border="0" style="background:#ffffff;">
+
+  <!-- HEADER -->
+  <tr>
+    <td style="background:#FF5A00;padding:36px 60px 30px;">
+      <p style="font-size:11px;text-transform:uppercase;letter-spacing:3px;color:#F4EDE3;margin:0 0 6px;">Process Overview</p>
+      <h1 style="color:#ffffff;font-size:26px;margin:0;font-weight:800;line-height:1.25;">Cost Per Order (CPO)</h1>
+      <p style="color:#F4EDE3;font-size:12px;margin:8px 0 0;">Store-level cost tracking &mdash; how it works</p>
+    </td>
+  </tr>
+
+  <!-- GREETING -->
+  <tr>
+    <td style="padding:32px 60px 20px;">
+      <p style="font-size:14px;color:#411517;line-height:1.75;margin:0 0 18px;">
+        Hi Team,
+        <br><br>
+        The <strong>Cost Per Order (CPO)</strong> dashboard is now live. This tool provides real-time visibility into <strong>how much each order costs to fulfill</strong> at the store level &mdash; combining attendance data with order volumes to calculate the true cost per order for every store, every day.
+        <br><br>
+        The dashboard supports both <strong>Basic CPO</strong> (picker cost only) and <strong>Loaded CPO</strong> (including champion and supervisor cost allocation), with built-in budget variance tracking and month-over-month comparison. Automated weekly and monthly reports are sent directly to management.
+        <br><br>
+        Below is the complete process overview covering what CPO is, how it&rsquo;s calculated, the data sources, and key features available in the dashboard.
+      </p>
+    </td>
+  </tr>
+
+  <!-- WHAT IS CPO -->
+  <tr>
+    <td style="padding:0 60px;">
+      <table width="100%" cellpadding="0" cellspacing="0" border="0"><tr><td style="border-top:2px solid #F4EDE3;padding:24px 0 0;"></td></tr></table>
+      <p style="color:#411517;font-size:14px;font-weight:800;text-transform:uppercase;letter-spacing:0.5px;margin:0 0 12px;">What Is CPO?</p>
+      <p style="font-size:13px;color:#411517;line-height:1.7;margin:0 0 20px;">
+        CPO stands for <strong>Cost Per Order</strong> &mdash; a metric that shows exactly how much it costs to fulfill each order at a given store. It is calculated by dividing the <strong>total picker cost</strong> (based on attendance and vendor rates) by the <strong>number of successful orders</strong> for that store in a given period.
+      </p>
+      <table width="100%" cellpadding="0" cellspacing="0" border="0" style="background:#FFF5F0;border-radius:6px;">
+        <tr>
+          <td style="padding:16px 24px;text-align:center;">
+            <p style="font-size:10px;color:#FF5A00;font-weight:700;text-transform:uppercase;letter-spacing:2px;margin:0 0 6px;">Formula</p>
+            <p style="font-size:20px;font-weight:800;color:#411517;margin:0;">Picker Cost &divide; Successful Orders = <span style="color:#FF5A00;">CPO</span></p>
+          </td>
+        </tr>
+      </table>
+    </td>
+  </tr>
+
+  <!-- HOW IT WORKS -->
+  <tr>
+    <td style="padding:20px 60px 0;">
+      <table width="100%" cellpadding="0" cellspacing="0" border="0"><tr><td style="border-top:2px solid #F4EDE3;padding:24px 0 0;"></td></tr></table>
+      <p style="color:#411517;font-size:14px;font-weight:800;text-transform:uppercase;letter-spacing:0.5px;margin:0 0 14px;">How It Works &mdash; Step by Step</p>
+
+      <table width="100%" cellpadding="0" cellspacing="0" border="0">
+        <tr>
+          <td width="42" style="vertical-align:top;padding:12px 12px 12px 0;">
+            <div style="width:28px;height:28px;background:#FF5A00;color:#fff;border-radius:50%;text-align:center;line-height:28px;font-weight:800;font-size:13px;">1</div>
+          </td>
+          <td style="vertical-align:top;padding:12px 0;border-bottom:1px solid #F4EDE3;font-size:13px;color:#411517;line-height:1.6;">
+            <strong>Attendance data pulled from Know app</strong> &mdash; the system reads daily attendance records to determine how many pickers were present at each store.
+            <span style="display:inline-block;background:#E6FFFA;color:#0d9488;font-size:10px;font-weight:700;padding:2px 7px;border-radius:4px;margin-left:4px;">Automated</span>
+          </td>
+        </tr>
+        <tr>
+          <td width="42" style="vertical-align:top;padding:12px 12px 12px 0;">
+            <div style="width:28px;height:28px;background:#FF5A00;color:#fff;border-radius:50%;text-align:center;line-height:28px;font-weight:800;font-size:13px;">2</div>
+          </td>
+          <td style="vertical-align:top;padding:12px 0;border-bottom:1px solid #F4EDE3;font-size:13px;color:#411517;line-height:1.6;">
+            <strong>Order volumes fetched per store</strong> &mdash; successful order counts are pulled from the orders data source, matched by Vendor ID.
+            <span style="display:inline-block;background:#E6FFFA;color:#0d9488;font-size:10px;font-weight:700;padding:2px 7px;border-radius:4px;margin-left:4px;">Automated</span>
+          </td>
+        </tr>
+        <tr>
+          <td width="42" style="vertical-align:top;padding:12px 12px 12px 0;">
+            <div style="width:28px;height:28px;background:#FF5A00;color:#fff;border-radius:50%;text-align:center;line-height:28px;font-weight:800;font-size:13px;">3</div>
+          </td>
+          <td style="vertical-align:top;padding:12px 0;border-bottom:1px solid #F4EDE3;font-size:13px;color:#411517;line-height:1.6;">
+            <strong>Picker cost calculated</strong> using vendor-specific rates &mdash; Present Days &times; (Vendor Rate &divide; Working Days). Each 3PL vendor (KRH, Transguard, etc.) has its own contracted rate.
+            <span style="display:inline-block;background:#E6FFFA;color:#0d9488;font-size:10px;font-weight:700;padding:2px 7px;border-radius:4px;margin-left:4px;">Automated</span>
+          </td>
+        </tr>
+        <tr>
+          <td width="42" style="vertical-align:top;padding:12px 12px 12px 0;">
+            <div style="width:28px;height:28px;background:#FF5A00;color:#fff;border-radius:50%;text-align:center;line-height:28px;font-weight:800;font-size:13px;">4</div>
+          </td>
+          <td style="vertical-align:top;padding:12px 0;border-bottom:1px solid #F4EDE3;font-size:13px;color:#411517;line-height:1.6;">
+            <strong>Basic CPO calculated per store</strong> &mdash; Total Picker Cost &divide; Successful Orders. This gives the baseline cost per order at each location.
+            <span style="display:inline-block;background:#E6FFFA;color:#0d9488;font-size:10px;font-weight:700;padding:2px 7px;border-radius:4px;margin-left:4px;">Automated</span>
+          </td>
+        </tr>
+        <tr>
+          <td width="42" style="vertical-align:top;padding:12px 12px 12px 0;">
+            <div style="width:28px;height:28px;background:#FF5A00;color:#fff;border-radius:50%;text-align:center;line-height:28px;font-weight:800;font-size:13px;">5</div>
+          </td>
+          <td style="vertical-align:top;padding:12px 0;border-bottom:1px solid #F4EDE3;font-size:13px;color:#411517;line-height:1.6;">
+            <strong>Loaded CPO adds champion &amp; supervisor costs</strong> &mdash; Champion monthly cost (AED 6,400) is allocated across their managed stores, and Supervisor cost (AED 8,500) is distributed similarly. This gives the true fully-loaded cost per order.
+            <span style="display:inline-block;background:#E6FFFA;color:#0d9488;font-size:10px;font-weight:700;padding:2px 7px;border-radius:4px;margin-left:4px;">Automated</span>
+          </td>
+        </tr>
+        <tr>
+          <td width="42" style="vertical-align:top;padding:12px 12px 12px 0;">
+            <div style="width:28px;height:28px;background:#FF5A00;color:#fff;border-radius:50%;text-align:center;line-height:28px;font-weight:800;font-size:13px;">6</div>
+          </td>
+          <td style="vertical-align:top;padding:12px 0;font-size:13px;color:#411517;line-height:1.6;">
+            <strong>Results displayed on live dashboard</strong> &mdash; sortable tables, KPI cards, charts, and filters by store/chain/city/period. Budget variance and MoM trends are highlighted automatically.
+            <span style="display:inline-block;background:#E6FFFA;color:#0d9488;font-size:10px;font-weight:700;padding:2px 7px;border-radius:4px;margin-left:4px;">Automated</span>
+          </td>
+        </tr>
+      </table>
+    </td>
+  </tr>
+
+  <!-- LOADED CPO BREAKDOWN -->
+  <tr>
+    <td style="padding:20px 60px 20px;">
+      <table width="100%" cellpadding="0" cellspacing="0" border="0"><tr><td style="border-top:2px solid #F4EDE3;padding:24px 0 0;"></td></tr></table>
+      <p style="color:#411517;font-size:14px;font-weight:800;text-transform:uppercase;letter-spacing:0.5px;margin:0 0 12px;">Loaded CPO Breakdown (Sample)</p>
+      <table width="100%" cellpadding="0" cellspacing="0" border="0" style="background:#FFF5F0;">
+        <tr>
+          <td style="padding:16px 24px;">
+            <table width="100%" cellpadding="0" cellspacing="0" border="0">
+              <tr>
+                <td style="padding:6px 0;font-size:13px;color:#555;border-bottom:1px solid #F4EDE3;">Picker cost (attendance &times; vendor rate)</td>
+                <td style="padding:6px 0;font-size:13px;font-weight:700;color:#411517;text-align:right;border-bottom:1px solid #F4EDE3;">AED 7.20</td>
+              </tr>
+              <tr>
+                <td style="padding:6px 0;font-size:13px;color:#555;border-bottom:1px solid #F4EDE3;">+ Champion allocation (AED 6,400/mo &divide; stores)</td>
+                <td style="padding:6px 0;font-size:13px;font-weight:700;color:#411517;text-align:right;border-bottom:1px solid #F4EDE3;">AED 1.40</td>
+              </tr>
+              <tr>
+                <td style="padding:6px 0;font-size:13px;color:#555;border-bottom:1px solid #F4EDE3;">+ Supervisor allocation (AED 8,500/mo &divide; stores)</td>
+                <td style="padding:6px 0;font-size:13px;font-weight:700;color:#411517;text-align:right;border-bottom:1px solid #F4EDE3;">AED 0.85</td>
+              </tr>
+              <tr>
+                <td style="padding:10px 0 6px;font-size:14px;font-weight:800;color:#411517;border-top:2px solid #FF5A00;">Loaded CPO</td>
+                <td style="padding:10px 0 6px;font-size:16px;font-weight:800;color:#FF5A00;text-align:right;border-top:2px solid #FF5A00;">AED 9.45</td>
+              </tr>
+            </table>
+          </td>
+        </tr>
+      </table>
+    </td>
+  </tr>
+
+  <!-- SAMPLE OUTPUT -->
+  <tr>
+    <td style="padding:0 60px 20px;">
+      <table width="100%" cellpadding="0" cellspacing="0" border="0"><tr><td style="border-top:2px solid #F4EDE3;padding:24px 0 0;"></td></tr></table>
+      <p style="color:#411517;font-size:14px;font-weight:800;text-transform:uppercase;letter-spacing:0.5px;margin:0 0 12px;">Sample Dashboard Output</p>
+      <table width="100%" cellpadding="0" cellspacing="0" border="0" style="border:1px solid #E0D6CC;">
+        <tr style="background:#411517;">
+          <td style="padding:7px 10px;color:#fff;font-size:10px;font-weight:700;">Store</td>
+          <td style="padding:7px 10px;color:#fff;font-size:10px;font-weight:700;text-align:center;">Pickers</td>
+          <td style="padding:7px 10px;color:#fff;font-size:10px;font-weight:700;text-align:center;">Orders</td>
+          <td style="padding:7px 10px;color:#fff;font-size:10px;font-weight:700;text-align:center;">Cost (AED)</td>
+          <td style="padding:7px 10px;color:#fff;font-size:10px;font-weight:700;text-align:center;">CPO</td>
+          <td style="padding:7px 10px;color:#fff;font-size:10px;font-weight:700;text-align:center;">Budget</td>
+          <td style="padding:7px 10px;color:#fff;font-size:10px;font-weight:700;text-align:center;">Variance</td>
+        </tr>
+        <tr>
+          <td style="padding:6px 10px;font-size:11px;color:#411517;border-bottom:1px solid #F4EDE3;">Carrefour MOE</td>
+          <td style="padding:6px 10px;font-size:11px;color:#411517;text-align:center;border-bottom:1px solid #F4EDE3;">12</td>
+          <td style="padding:6px 10px;font-size:11px;color:#411517;text-align:center;border-bottom:1px solid #F4EDE3;">485</td>
+          <td style="padding:6px 10px;font-size:11px;color:#411517;text-align:center;border-bottom:1px solid #F4EDE3;">4,320</td>
+          <td style="padding:6px 10px;font-size:11px;font-weight:800;color:#FF5A00;text-align:center;border-bottom:1px solid #F4EDE3;">8.91</td>
+          <td style="padding:6px 10px;font-size:11px;color:#411517;text-align:center;border-bottom:1px solid #F4EDE3;">9.50</td>
+          <td style="padding:6px 10px;font-size:11px;text-align:center;border-bottom:1px solid #F4EDE3;"><span style="background:#E6F5EC;color:#2e8b57;padding:2px 6px;border-radius:4px;font-weight:700;font-size:10px;">&#9660; 6.2%</span></td>
+        </tr>
+        <tr style="background:#FAFAF8;">
+          <td style="padding:6px 10px;font-size:11px;color:#411517;border-bottom:1px solid #F4EDE3;">Carrefour DFC</td>
+          <td style="padding:6px 10px;font-size:11px;color:#411517;text-align:center;border-bottom:1px solid #F4EDE3;">8</td>
+          <td style="padding:6px 10px;font-size:11px;color:#411517;text-align:center;border-bottom:1px solid #F4EDE3;">312</td>
+          <td style="padding:6px 10px;font-size:11px;color:#411517;text-align:center;border-bottom:1px solid #F4EDE3;">3,180</td>
+          <td style="padding:6px 10px;font-size:11px;font-weight:800;color:#FF5A00;text-align:center;border-bottom:1px solid #F4EDE3;">10.19</td>
+          <td style="padding:6px 10px;font-size:11px;color:#411517;text-align:center;border-bottom:1px solid #F4EDE3;">9.50</td>
+          <td style="padding:6px 10px;font-size:11px;text-align:center;border-bottom:1px solid #F4EDE3;"><span style="background:#FFF5F0;color:#FF5A00;padding:2px 6px;border-radius:4px;font-weight:700;font-size:10px;">&#9650; 7.3%</span></td>
+        </tr>
+        <tr>
+          <td style="padding:6px 10px;font-size:11px;color:#411517;border-bottom:1px solid #F4EDE3;">Lulu Al Barsha</td>
+          <td style="padding:6px 10px;font-size:11px;color:#411517;text-align:center;border-bottom:1px solid #F4EDE3;">6</td>
+          <td style="padding:6px 10px;font-size:11px;color:#411517;text-align:center;border-bottom:1px solid #F4EDE3;">278</td>
+          <td style="padding:6px 10px;font-size:11px;color:#411517;text-align:center;border-bottom:1px solid #F4EDE3;">2,160</td>
+          <td style="padding:6px 10px;font-size:11px;font-weight:800;color:#FF5A00;text-align:center;border-bottom:1px solid #F4EDE3;">7.77</td>
+          <td style="padding:6px 10px;font-size:11px;color:#411517;text-align:center;border-bottom:1px solid #F4EDE3;">8.50</td>
+          <td style="padding:6px 10px;font-size:11px;text-align:center;border-bottom:1px solid #F4EDE3;"><span style="background:#E6F5EC;color:#2e8b57;padding:2px 6px;border-radius:4px;font-weight:700;font-size:10px;">&#9660; 8.6%</span></td>
+        </tr>
+        <tr style="background:#FAFAF8;">
+          <td style="padding:6px 10px;font-size:11px;color:#411517;border-bottom:1px solid #F4EDE3;">Union Coop</td>
+          <td style="padding:6px 10px;font-size:11px;color:#411517;text-align:center;border-bottom:1px solid #F4EDE3;">5</td>
+          <td style="padding:6px 10px;font-size:11px;color:#411517;text-align:center;border-bottom:1px solid #F4EDE3;">195</td>
+          <td style="padding:6px 10px;font-size:11px;color:#411517;text-align:center;border-bottom:1px solid #F4EDE3;">1,890</td>
+          <td style="padding:6px 10px;font-size:11px;font-weight:800;color:#FF5A00;text-align:center;border-bottom:1px solid #F4EDE3;">9.69</td>
+          <td style="padding:6px 10px;font-size:11px;color:#411517;text-align:center;border-bottom:1px solid #F4EDE3;">9.50</td>
+          <td style="padding:6px 10px;font-size:11px;text-align:center;border-bottom:1px solid #F4EDE3;"><span style="background:#FFF5F0;color:#FF5A00;padding:2px 6px;border-radius:4px;font-weight:700;font-size:10px;">&#9650; 2.0%</span></td>
+        </tr>
+        <tr>
+          <td style="padding:6px 10px;font-size:11px;color:#411517;">Spinneys JLT</td>
+          <td style="padding:6px 10px;font-size:11px;color:#411517;text-align:center;">4</td>
+          <td style="padding:6px 10px;font-size:11px;color:#411517;text-align:center;">156</td>
+          <td style="padding:6px 10px;font-size:11px;color:#411517;text-align:center;">1,440</td>
+          <td style="padding:6px 10px;font-size:11px;font-weight:800;color:#FF5A00;text-align:center;">9.23</td>
+          <td style="padding:6px 10px;font-size:11px;color:#411517;text-align:center;">9.50</td>
+          <td style="padding:6px 10px;font-size:11px;text-align:center;"><span style="background:#E6F5EC;color:#2e8b57;padding:2px 6px;border-radius:4px;font-weight:700;font-size:10px;">&#9660; 2.8%</span></td>
+        </tr>
+      </table>
+    </td>
+  </tr>
+
+  <!-- DATA SOURCES -->
+  <tr>
+    <td style="padding:0 60px 20px;">
+      <table width="100%" cellpadding="0" cellspacing="0" border="0"><tr><td style="border-top:2px solid #F4EDE3;padding:24px 0 0;"></td></tr></table>
+      <p style="color:#411517;font-size:14px;font-weight:800;text-transform:uppercase;letter-spacing:0.5px;margin:0 0 12px;">Data Sources</p>
+      <table width="100%" cellpadding="0" cellspacing="0" border="0">
+        <tr>
+          <td width="33%" style="text-align:center;padding:14px 6px;border:1px solid #F4EDE3;vertical-align:top;">
+            <div style="width:34px;height:34px;background:#FF5A00;border-radius:50%;text-align:center;line-height:34px;font-weight:800;font-size:16px;color:#fff;display:inline-block;margin-bottom:5px;">&#128203;</div>
+            <p style="margin:0 0 3px;font-size:11px;font-weight:700;color:#411517;">Attendance</p>
+            <p style="margin:0;font-size:10px;color:#888;line-height:1.4;">Know app attendance data<br>MTD, Weekly, Monthly tabs</p>
+          </td>
+          <td width="4"></td>
+          <td width="33%" style="text-align:center;padding:14px 6px;border:1px solid #F4EDE3;vertical-align:top;">
+            <div style="width:34px;height:34px;background:#FF5A00;border-radius:50%;text-align:center;line-height:34px;font-weight:800;font-size:16px;color:#fff;display:inline-block;margin-bottom:5px;">&#128722;</div>
+            <p style="margin:0 0 3px;font-size:11px;font-weight:700;color:#411517;">Orders</p>
+            <p style="margin:0;font-size:10px;color:#888;line-height:1.4;">Successful order counts<br>MTD, Weekly, Monthly tabs</p>
+          </td>
+          <td width="4"></td>
+          <td width="33%" style="text-align:center;padding:14px 6px;border:1px solid #F4EDE3;vertical-align:top;">
+            <div style="width:34px;height:34px;background:#411517;border-radius:50%;text-align:center;line-height:34px;font-weight:800;font-size:16px;color:#fff;display:inline-block;margin-bottom:5px;">&#128101;</div>
+            <p style="margin:0 0 3px;font-size:11px;font-weight:700;color:#411517;">Master Data</p>
+            <p style="margin:0;font-size:10px;color:#888;line-height:1.4;">Champions, stores, vendors<br>Cost rates &amp; hierarchy</p>
+          </td>
+        </tr>
+      </table>
+      <p style="text-align:center;font-size:10px;color:#888;margin:8px 0 0;">All sources linked by <strong style="color:#411517;">Shift Branch ID / Vendor ID</strong></p>
+    </td>
+  </tr>
+
+  <!-- DASHBOARD VIEWS -->
+  <tr>
+    <td style="padding:0 60px 20px;">
+      <table width="100%" cellpadding="0" cellspacing="0" border="0"><tr><td style="border-top:2px solid #F4EDE3;padding:24px 0 0;"></td></tr></table>
+      <p style="color:#411517;font-size:14px;font-weight:800;text-transform:uppercase;letter-spacing:0.5px;margin:0 0 12px;">Dashboard Features</p>
+      <table width="100%" cellpadding="0" cellspacing="0" border="0">
+        <tr>
+          <td style="padding:5px 8px;background:#F4EDE3;font-size:11px;color:#411517;font-weight:600;text-align:center;">Daily View</td>
+          <td width="4"></td>
+          <td style="padding:5px 8px;background:#F4EDE3;font-size:11px;color:#411517;font-weight:600;text-align:center;">Weekly View</td>
+          <td width="4"></td>
+          <td style="padding:5px 8px;background:#F4EDE3;font-size:11px;color:#411517;font-weight:600;text-align:center;">Monthly View</td>
+          <td width="4"></td>
+          <td style="padding:5px 8px;background:#F4EDE3;font-size:11px;color:#411517;font-weight:600;text-align:center;">MTD View</td>
+        </tr>
+      </table>
+      <table width="100%" cellpadding="0" cellspacing="0" border="0" style="margin-top:4px;">
+        <tr>
+          <td style="padding:5px 8px;background:#F4EDE3;font-size:11px;color:#411517;font-weight:600;text-align:center;">KPI Cards</td>
+          <td width="4"></td>
+          <td style="padding:5px 8px;background:#F4EDE3;font-size:11px;color:#411517;font-weight:600;text-align:center;">Sortable Data Table</td>
+          <td width="4"></td>
+          <td style="padding:5px 8px;background:#F4EDE3;font-size:11px;color:#411517;font-weight:600;text-align:center;">Chart.js Visualizations</td>
+          <td width="4"></td>
+          <td style="padding:5px 8px;background:#F4EDE3;font-size:11px;color:#411517;font-weight:600;text-align:center;">Budget Variance</td>
+        </tr>
+      </table>
+      <table width="100%" cellpadding="0" cellspacing="0" border="0" style="margin-top:4px;">
+        <tr>
+          <td style="padding:5px 8px;background:#F4EDE3;font-size:11px;color:#411517;font-weight:600;text-align:center;">Store/Chain/City Filters</td>
+          <td width="4"></td>
+          <td style="padding:5px 8px;background:#F4EDE3;font-size:11px;color:#411517;font-weight:600;text-align:center;">MoM Comparison</td>
+          <td width="4"></td>
+          <td style="padding:5px 8px;background:#F4EDE3;font-size:11px;color:#411517;font-weight:600;text-align:center;">High CPO Alerts (P75)</td>
+          <td width="4"></td>
+          <td style="padding:5px 8px;background:#F4EDE3;font-size:11px;color:#411517;font-weight:600;text-align:center;">User Type Filter</td>
+        </tr>
+      </table>
+    </td>
+  </tr>
+
+  <!-- ACCESS CONTROL -->
+  <tr>
+    <td style="padding:0 60px 20px;">
+      <table width="100%" cellpadding="0" cellspacing="0" border="0"><tr><td style="border-top:2px solid #F4EDE3;padding:24px 0 0;"></td></tr></table>
+      <p style="color:#411517;font-size:14px;font-weight:800;text-transform:uppercase;letter-spacing:0.5px;margin:0 0 12px;">Access Control &mdash; 3 Roles</p>
+      <table width="100%" cellpadding="0" cellspacing="0" border="0">
+        <tr>
+          <td width="33%" style="text-align:center;padding:14px 6px;border:1px solid #F4EDE3;vertical-align:top;">
+            <div style="width:34px;height:34px;background:#FF5A00;border-radius:50%;text-align:center;line-height:34px;font-weight:800;font-size:15px;color:#fff;display:inline-block;margin-bottom:5px;">A</div>
+            <p style="margin:0 0 3px;font-size:11px;font-weight:700;color:#411517;">Admin</p>
+            <p style="margin:0;font-size:10px;color:#888;line-height:1.4;">Full access to all data, config settings, user management, triggers</p>
+          </td>
+          <td width="4"></td>
+          <td width="33%" style="text-align:center;padding:14px 6px;border:1px solid #F4EDE3;vertical-align:top;">
+            <div style="width:34px;height:34px;background:#2d5bff;border-radius:50%;text-align:center;line-height:34px;font-weight:800;font-size:15px;color:#fff;display:inline-block;margin-bottom:5px;">M</div>
+            <p style="margin:0 0 3px;font-size:11px;font-weight:700;color:#411517;">Manager</p>
+            <p style="margin:0;font-size:10px;color:#888;line-height:1.4;">Full view access to all dashboard data, no config editing</p>
+          </td>
+          <td width="4"></td>
+          <td width="33%" style="text-align:center;padding:14px 6px;border:1px solid #F4EDE3;vertical-align:top;">
+            <div style="width:34px;height:34px;background:#411517;border-radius:50%;text-align:center;line-height:34px;font-weight:800;font-size:15px;color:#fff;display:inline-block;margin-bottom:5px;">S</div>
+            <p style="margin:0 0 3px;font-size:11px;font-weight:700;color:#411517;">Supervisor</p>
+            <p style="margin:0;font-size:10px;color:#888;line-height:1.4;">Filtered to their own assigned stores from Master Data</p>
+          </td>
+        </tr>
+      </table>
+    </td>
+  </tr>
+
+  <!-- AUTOMATED REPORTS -->
+  <tr>
+    <td style="padding:0 60px 20px;">
+      <table width="100%" cellpadding="0" cellspacing="0" border="0"><tr><td style="border-top:2px solid #F4EDE3;padding:24px 0 0;"></td></tr></table>
+      <p style="color:#411517;font-size:14px;font-weight:800;text-transform:uppercase;letter-spacing:0.5px;margin:0 0 12px;">Automated Email Reports</p>
+      <table width="100%" cellpadding="0" cellspacing="0" border="0">
+        <tr>
+          <td width="50%" style="text-align:center;padding:14px 6px;border:1px solid #F4EDE3;vertical-align:top;">
+            <p style="font-size:20px;font-weight:800;color:#FF5A00;margin:0;">Weekly</p>
+            <p style="font-size:10px;color:#888;margin:4px 0 0;line-height:1.4;">Every Sunday at 8:00 AM<br>talabat-branded HTML with KPI cards,<br>data table &amp; high-CPO highlights</p>
+          </td>
+          <td width="4"></td>
+          <td width="50%" style="text-align:center;padding:14px 6px;border:1px solid #F4EDE3;vertical-align:top;">
+            <p style="font-size:20px;font-weight:800;color:#FF5A00;margin:0;">Monthly</p>
+            <p style="font-size:10px;color:#888;margin:4px 0 0;line-height:1.4;">1st of every month at 8:00 AM<br>Full month summary with MoM<br>comparison &amp; budget variance</p>
+          </td>
+        </tr>
+      </table>
+    </td>
+  </tr>
+
+  <!-- KEY BENEFITS -->
+  <tr>
+    <td style="background:#411517;padding:26px 60px;">
+      <p style="color:#F4EDE3;font-size:13px;line-height:1.7;margin:0;">
+        <strong style="color:#FF5A00;">Key Benefits</strong><br><br>
+        <strong style="color:#FF5A00;">&bull;</strong>&ensp;Real-time visibility into cost per order at every store &mdash; no manual calculations needed<br>
+        <strong style="color:#FF5A00;">&bull;</strong>&ensp;Loaded CPO shows the true fully-loaded cost including champion and supervisor allocation<br>
+        <strong style="color:#FF5A00;">&bull;</strong>&ensp;Budget variance tracking highlights over-budget stores for immediate action<br>
+        <strong style="color:#FF5A00;">&bull;</strong>&ensp;Month-over-month comparison enables trend analysis and workforce optimization<br>
+        <strong style="color:#FF5A00;">&bull;</strong>&ensp;Automated weekly and monthly reports sent directly to management &mdash; zero manual reporting<br>
+        <strong style="color:#FF5A00;">&bull;</strong>&ensp;High-CPO alerts (75th percentile) flag outlier stores automatically
+      </p>
+    </td>
+  </tr>
+
+  <!-- VENDOR RATES -->
+  <tr>
+    <td style="padding:28px 60px 20px;">
+      <table width="100%" cellpadding="0" cellspacing="0" border="0"><tr><td style="border-top:2px solid #F4EDE3;padding:24px 0 0;"></td></tr></table>
+      <p style="color:#411517;font-size:14px;font-weight:800;text-transform:uppercase;letter-spacing:0.5px;margin:0 0 12px;">Vendor Rate Configuration</p>
+      <p style="font-size:12px;color:#888;margin:0 0 10px;">All rates are configurable via the dashboard settings panel. Current rates (AED/month):</p>
+      <table width="100%" cellpadding="0" cellspacing="0" border="0" style="border:1px solid #E0D6CC;">
+        <tr style="background:#411517;">
+          <td style="padding:6px 10px;color:#fff;font-size:10px;font-weight:700;">Vendor</td>
+          <td style="padding:6px 10px;color:#fff;font-size:10px;font-weight:700;text-align:center;">Monthly Rate</td>
+          <td style="padding:6px 10px;color:#fff;font-size:10px;font-weight:700;">Vendor</td>
+          <td style="padding:6px 10px;color:#fff;font-size:10px;font-weight:700;text-align:center;">Monthly Rate</td>
+        </tr>
+        <tr>
+          <td style="padding:5px 10px;font-size:11px;color:#411517;border-bottom:1px solid #F4EDE3;">KRH</td>
+          <td style="padding:5px 10px;font-size:11px;font-weight:700;color:#FF5A00;text-align:center;border-bottom:1px solid #F4EDE3;">2,750</td>
+          <td style="padding:5px 10px;font-size:11px;color:#411517;border-bottom:1px solid #F4EDE3;">Transguard</td>
+          <td style="padding:5px 10px;font-size:11px;font-weight:700;color:#FF5A00;text-align:center;border-bottom:1px solid #F4EDE3;">2,574</td>
+        </tr>
+        <tr style="background:#FAFAF8;">
+          <td colspan="2" style="padding:5px 10px;font-size:10px;color:#888;text-align:center;">+ additional vendors configurable</td>
+          <td colspan="2" style="padding:5px 10px;font-size:10px;color:#888;text-align:center;">Rates support effective dating</td>
+        </tr>
+      </table>
+      <table cellpadding="0" cellspacing="0" border="0" align="center" style="margin:10px auto;">
+        <tr>
+          <td style="padding:4px 12px;background:#F4EDE3;font-size:10px;font-weight:600;color:#411517;">Champion: AED 6,400/mo</td>
+          <td width="6"></td>
+          <td style="padding:4px 12px;background:#F4EDE3;font-size:10px;font-weight:600;color:#411517;">Supervisor: AED 8,500/mo</td>
+        </tr>
+      </table>
+    </td>
+  </tr>
+
+  <!-- CLOSING -->
+  <tr>
+    <td style="padding:10px 60px 28px;">
+      <table width="100%" cellpadding="0" cellspacing="0" border="0"><tr><td style="border-top:2px solid #F4EDE3;padding:24px 0 0;"></td></tr></table>
+      <p style="font-size:12px;color:#411517;line-height:1.8;margin:0 0 10px;">The CPO dashboard is accessible to all authorized users. If you need access or have questions about the cost calculations, vendor rates, or any dashboard features, please reach out to the LS Operations team.</p>
+      <p style="margin:0 0 3px;font-weight:700;font-size:12px;color:#411517;">Best regards,</p>
+      <p style="margin:0;color:#FF5A00;font-weight:600;font-size:12px;">LS Operations Team</p>
+      <p style="margin:2px 0 0;font-size:10px;color:#999;">talabat Local Shops Operations — UAE</p>
+    </td>
+  </tr>
+
+  <!-- FOOTER -->
+  <tr>
+    <td style="background:#411517;padding:20px 60px;text-align:center;">
+      <p style="color:#F4EDE3;font-size:12px;font-weight:600;margin:0 0 4px;">LS Operations Team</p>
+      <p style="color:#F4EDE3;font-size:11px;margin:0;">talabat Local Shops Operations &mdash; UAE</p>
+    </td>
+  </tr>
+
+</table>
+<!-- /MAIN EMAIL BOX -->
+
+</td></tr>
+</table>
+
+</body>
+</html>
