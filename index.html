@@ -239,10 +239,11 @@ if(typeof google==='undefined'||!google.script||window.location.hostname.indexOf
     var _successHandler=null,_failureHandler=null;
     function makeRunner(){
       var runner={};
-      runner.withSuccessHandler=function(fn){_successHandler=fn;return runner;};
-      runner.withFailureHandler=function(fn){_failureHandler=fn;return runner;};
-      // proxy: any method call → look up in _dataFetchers
-      return new Proxy(runner,{
+      // withSuccessHandler/withFailureHandler must return the Proxy (not the plain runner)
+      // so that chaining .withSuccessHandler(...).withFailureHandler(...).methodName() works
+      runner.withSuccessHandler=function(fn){_successHandler=fn;return _proxy;};
+      runner.withFailureHandler=function(fn){_failureHandler=fn;return _proxy;};
+      var _proxy=new Proxy(runner,{
         get:function(target,prop){
           if(prop in target)return target[prop];
           return function(){
@@ -260,6 +261,7 @@ if(typeof google==='undefined'||!google.script||window.location.hostname.indexOf
           };
         }
       });
+      return _proxy;
     }
     // When meta loads, cache it for getCPOData date lookups
     _fetchJSON('data/meta.json').then(function(m){window._staticMeta=m;}).catch(function(){});
