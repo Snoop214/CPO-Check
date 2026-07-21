@@ -16,6 +16,10 @@ SHEET_IDS = {
     'master':     '10swg2HotxTSmIMPGQt6AxARFQyfTbvt7504tFjysmGs',
     'hourly':     '1n4GopL6gSsSw_sauMkHKVfcF6IDYI84skyGMdfC4hqA',
 }
+# Sheet tabs for hourly/timing sheet:
+# Sheet1 = Hourly GMV (Chain ID, Chain Name, Vendor ID, Vendor Name, then cols 0-23 = GMV per hour)
+# Sheet2 = Hourly Orders (Chain ID, Chain Name, Vendor ID, Vendor Name, then cols 0-23 = avg daily orders per hour)
+# Sheet3 = Store timing (Vendor ID, Vendor Name, Day of Week, Schedule End, Schedule Start, Shift Hours)
 ORDER_TABS  = {'mtd': 'MTD Order',  'weekly': 'Weekly Order',  'monthly': 'Monthly Order'}
 ATTEND_TABS = {'mtd': 'MTD Know',   'weekly': 'Weekly Know',   'monthly': 'Monthly Know'}
 
@@ -247,67 +251,109 @@ def read_master_data(gc):
     return master
 
 def read_hourly_data(gc):
-    """Read hourly orders and GMV from the hourly sheet."""
+    """Read hourly orders, GMV and store timing from the hourly sheet.
+    Sheet1 = GMV per hour, Sheet2 = Avg daily orders per hour, Sheet3 = store timing.
+    Columns: Chain ID, Chain Name, Vendor ID, Vendor Name, then hour 0..23
+    """
     print('  reading hourly data...')
     try:
         sh = gc.open_by_key(SHEET_IDS['hourly'])
         sheets = {ws.title: ws for ws in sh.worksheets()}
 
-        def read_tab(tab_name):
-            if tab_name not in sheets: return {}
+        def read_hourly_tab(tab_name):
+            if tab_name not in sheets:
+                print(f'    tab {tab_name} not found')
+                return {}
             data = sheets[tab_name].get_all_values()
-            if len(data) < 2: return {}
-            headers = [str(h).strip().lower() for h in data[0]]
-            c_vid = find_col(headers, ['vendor id', 'vendorid'])
+            # Row 0: header labels, Row 1: hour numbers (0-23), data from row 2
+            if len(data) < 3: return {}
+            # Find vendor id column
+            header_row = [str(c).strip().lower() for c in data[1]]
+            c_vid = find_col(header_row, ['vendor id', 'vendorid', 'vendor_id'])
+            if c_vid < 0:
+                header_row = [str(c).strip().lower() for c in data[0]]
+                c_vid = find_col(header_row, ['vendor id', 'vendorid', 'vendor_id'])
+                data_start = 1
+            else:
+                data_start = 2
+
+            # Find hour columns — row that has 0,1,2...23
+            hour_col_map = {}
+            for r in range(min(3, len(data))):
+                for ci, val in enumerate(data[r]):
+                    try:
+                        h = int(str(val).strip())
+                        if 0 <= h <= 23:
+                            hour_col_map[h] = ci
+                    except: pass
+                if len(hour_col_map) >= 20: break
+
             result = {}
-            for row in data[1:]:
+            for row in data[data_start:]:
                 vid = str(row[c_vid]).strip() if c_vid >= 0 and c_vid < len(row) else ''
-                if not vid: continue
+                if not vid or not vid.isdigit(): continue
                 hourly = {}
-                for h in range(24):
-                    col_names = [str(h), f'h{h}', f'hour_{h}', f'{h:02d}']
-                    ci = find_col(headers, col_names)
-                    if ci >= 0 and ci < len(row):
-                        try: hourly[h] = float(str(row[ci]).replace(',', ''))
+                for h, ci in hour_col_map.items():
+                    if ci < len(row):
+                        try: hourly[h] = float(str(row[ci]).replace(',', '')) if row[ci].strip() else 0
                         except: hourly[h] = 0
                 result[vid] = hourly
+            print(f'    {tab_name}: {len(result)} stores')
             return result
 
-        orders_hourly = read_tab('Sheet2') or read_tab('Hourly Orders') or read_tab(sheets[list(sheets.keys())[1]].title if len(sheets) > 1 else '')
-        gmv_hourly    = read_tab('Hourly GMV') or read_tab('Sheet3 GMV') or {}
+        orders_hourly = read_hourly_tab('Sheet2')
+        gmv_hourly    = read_hourly_tab('Sheet1')
 
-        # Store timing: Sheet3 has open/close datetime strings
+        # Sheet3 = store timing: Vendor ID, Vendor Name, Day of Week, Schedule End Time, Schedule Start Time, Shift Duration
         timing = {}
-        timing_tab = 'Sheet3' if 'Sheet3' in sheets else None
-        if timing_tab:
-            data = sheets[timing_tab].get_all_values()
+        if 'Sheet3' in sheets:
+            data = sheets['Sheet3'].get_all_values()
             if len(data) >= 2:
-                headers = [str(h).strip().lower() for h in data[0]]
-                c_vid   = find_col(headers, ['vendor id', 'vendorid'])
-                c_open  = find_col(headers, ['open', 'opening', 'open_time'])
-                c_close = find_col(headers, ['close', 'closing', 'close_time'])
-                for row in data[1:]:
-                    vid = str(row[c_vid]).strip() if c_vid >= 0 and c_vid < len(row) else ''
-                    if not vid: continue
-                    def extract_hr(s):
-                        m = re.search(r'(\d{1,2}):(\d{2})', str(s))
-                        if m: return int(m.group(1)) + int(m.group(2)) / 60
-                        return None
-                    op = extract_hr(row[c_open])  if c_open  >= 0 and c_open  < len(row) else None
-                    cl = extract_hr(row[c_close]) if c_close >= 0 and c_close < len(row) else None
+                # Find header row
+                for hr in range(min(3, len(data))):
+                    hl = [str(c).strip().lower() for c in data[hr]]
+                    c_vid   = find_col(hl, ['vendor id', 'vendorid'])
+                    c_start = find_col(hl, ['local schedule start at time', 'schedule start', 'start time', 'open'])
+                    c_end   = find_col(hl, ['local schedule ends at time', 'schedule end', 'end time', 'close'])
+                    if c_vid >= 0 and (c_start >= 0 or c_end >= 0):
+                        data_start = hr + 1
+                        break
+                else:
+                    c_vid, c_start, c_end, data_start = 0, 5, 4, 1
+
+                def extract_hr(s):
+                    m = re.search(r'(\d{1,2}):(\d{2})', str(s))
+                    if m: return int(m.group(1)) + int(m.group(2)) / 60
+                    return None
+
+                def snap(h, direction):
+                    base = int(h)
+                    half = base + 0.5
+                    if direction == 'up':
+                        if h <= base: return base
+                        if h <= half: return half
+                        return base + 1
+                    else:
+                        if h >= base + 0.5: return base + 0.5
+                        return base
+
+                seen = set()
+                for row in data[data_start:]:
+                    vid = str(row[c_vid]).strip() if c_vid < len(row) else ''
+                    if not vid or not vid.isdigit() or vid in seen: continue
+                    seen.add(vid)
+                    op_raw = row[c_start] if c_start >= 0 and c_start < len(row) else ''
+                    cl_raw = row[c_end]   if c_end   >= 0 and c_end   < len(row) else ''
+                    op = extract_hr(op_raw)
+                    cl = extract_hr(cl_raw)
                     if op is not None and cl is not None:
-                        def snap(h, direction):
-                            base = int(h)
-                            half = base + 0.5
-                            if direction == 'up':
-                                return half if h > base and h <= half else (base + 1 if h > half else base)
-                            else:
-                                return base if h >= base + 0.5 else base
                         timing[vid] = {'openHr': snap(op, 'up'), 'closeHr': snap(cl, 'down')}
+                print(f'    Sheet3 timing: {len(timing)} stores')
 
         return {'orders': orders_hourly, 'gmv': gmv_hourly, 'timing': timing}
     except Exception as e:
         print(f'  warning: hourly data failed — {e}')
+        import traceback; traceback.print_exc()
         return {'orders': {}, 'gmv': {}, 'timing': {}}
 
 # ── CPO Engine ───────────────────────────────────────────────────
