@@ -3058,30 +3058,39 @@ function renderUsersTab(){
   google.script.run.withSuccessHandler(function(sups){APP.supervisorList=sups||[];}).getSupervisorList();
   return h;
 }
+function _renderUsersList(users){
+  var myEmail=(APP.user.email||'').toLowerCase();
+  var t='<table class="cfg-table"><tr><th>Email</th><th>Role</th><th>Supervisor</th><th>Status</th><th style="text-align:right">Actions</th></tr>';
+  (users||[]).forEach(function(u){
+    var isMe=(u.email||'').toLowerCase()===myEmail,isRev=u.status==='revoked';
+    var role=(u.role||'').toLowerCase();
+    var cls=role==='admin'?'tag-admin':role==='manager'?'tag-manager':role==='supervisor'?'tag-supervisor':'tag-viewer';
+    t+='<tr style="'+(isRev?'opacity:.6':'')+'">';
+    t+='<td>'+u.email+(isMe?'<span style="font-size:10px;color:var(--primary);font-weight:600;margin-left:4px">YOU</span>':'')+'</td>';
+    t+='<td><span class="tag '+cls+'">'+u.role+'</span></td><td>'+(u.supervisorName||'—')+'</td>';
+    t+='<td><span class="tag" style="background:'+(isRev?'#fef2f2':'#ecfdf5')+';color:'+(isRev?'#dc2626':'#059669')+'">'+(isRev?'Revoked':'Active')+'</span></td>';
+    t+='<td style="text-align:right">';
+    t+='<button class="btn btn-sm btn-outline" style="color:var(--primary)" onclick="sendInviteAction(\''+u.email+'\',\''+u.role+'\')"><i class="fas fa-envelope"></i></button> ';
+    if(!isMe){
+      t+='<button class="btn btn-sm btn-outline" onclick="editUserAction(\''+u.email+'\',\''+u.role+'\',\''+(u.supervisorName||'')+'\')"><i class="fas fa-edit"></i></button> ';
+      if(isRev)t+='<button class="btn btn-sm btn-outline" style="color:var(--success)" onclick="reinstateUserAction(\''+u.email+'\')"><i class="fas fa-undo"></i></button> ';
+      else t+='<button class="btn btn-sm btn-outline" style="color:var(--warning)" onclick="revokeUserAction(\''+u.email+'\')"><i class="fas fa-ban"></i></button> ';
+      t+='<button class="btn btn-sm btn-outline" style="color:var(--danger)" onclick="removeUserAction(\''+u.email+'\')"><i class="fas fa-trash"></i></button>';
+    }
+    t+='</td></tr>';
+  });
+  t+='</table>';
+  var w=document.getElementById('usersTableWrap'); if(w)w.innerHTML=t;
+}
 function loadUsersTable(){
-  google.script.run.withSuccessHandler(function(users){
-    var myEmail=(APP.user.email||'').toLowerCase();
-    var t='<table class="cfg-table"><tr><th>Email</th><th>Role</th><th>Supervisor</th><th>Status</th><th style="text-align:right">Actions</th></tr>';
-    users.forEach(function(u){
-      var isMe=u.email===myEmail,isRev=u.status==='revoked';
-      var cls=u.role==='admin'?'tag-admin':u.role==='manager'?'tag-manager':u.role==='supervisor'?'tag-supervisor':'tag-viewer';
-      t+='<tr style="'+(isRev?'opacity:.6':'')+'">';
-      t+='<td>'+u.email+(isMe?'<span style="font-size:10px;color:var(--primary);font-weight:600;margin-left:4px">YOU</span>':'')+'</td>';
-      t+='<td><span class="tag '+cls+'">'+u.role+'</span></td><td>'+(u.supervisorName||'—')+'</td>';
-      t+='<td><span class="tag" style="background:'+(isRev?'#fef2f2':'#ecfdf5')+';color:'+(isRev?'#dc2626':'#059669')+'">'+(isRev?'Revoked':'Active')+'</span></td>';
-      t+='<td style="text-align:right">';
-      t+='<button class="btn btn-sm btn-outline" style="color:var(--primary)" onclick="sendInviteAction(\''+u.email+'\',\''+u.role+'\')"><i class="fas fa-envelope"></i></button> ';
-      if(!isMe){
-        t+='<button class="btn btn-sm btn-outline" onclick="editUserAction(\''+u.email+'\',\''+u.role+'\',\''+(u.supervisorName||'')+'\')"><i class="fas fa-edit"></i></button> ';
-        if(isRev)t+='<button class="btn btn-sm btn-outline" style="color:var(--success)" onclick="reinstateUserAction(\''+u.email+'\')"><i class="fas fa-undo"></i></button> ';
-        else t+='<button class="btn btn-sm btn-outline" style="color:var(--warning)" onclick="revokeUserAction(\''+u.email+'\')"><i class="fas fa-ban"></i></button> ';
-        t+='<button class="btn btn-sm btn-outline" style="color:var(--danger)" onclick="removeUserAction(\''+u.email+'\')"><i class="fas fa-trash"></i></button>';
-      }
-      t+='</td></tr>';
-    });
-    t+='</table>';
-    var w=document.getElementById('usersTableWrap'); if(w)w.innerHTML=t;
-  }).loadUsers();
+  if(window._staticMode){
+    fetch('config/users.json?t='+Date.now())
+      .then(function(r){return r.ok?r.json():[];})
+      .then(function(users){_renderUsersList(users);})
+      .catch(function(e){var w=document.getElementById('usersTableWrap');if(w)w.innerHTML='<p style="color:var(--danger);padding:16px">Error loading users: '+e.message+'</p>';});
+    return;
+  }
+  google.script.run.withSuccessHandler(_renderUsersList).loadUsers();
 }
 function onURoleChange(){var r=document.getElementById('uRole').value,g=document.getElementById('uSupGroup');if(r==='supervisor'){g.style.display='';var s=document.getElementById('uSupName');s.innerHTML='<option value="">Select...</option>';(APP.supervisorList||[]).forEach(function(n){s.innerHTML+='<option>'+n+'</option>';});}else g.style.display='none';}
 function addUserAction(){
