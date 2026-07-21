@@ -20,7 +20,7 @@ SHEET_IDS = {
 # Sheet1 = Hourly GMV (Chain ID, Chain Name, Vendor ID, Vendor Name, then cols 0-23 = GMV per hour)
 # Sheet2 = Hourly Orders (Chain ID, Chain Name, Vendor ID, Vendor Name, then cols 0-23 = avg daily orders per hour)
 # Sheet3 = Store timing (Vendor ID, Vendor Name, Day of Week, Schedule End, Schedule Start, Shift Hours)
-ORDER_TABS  = {'mtd': 'MTD Order',  'weekly': 'Weekly Order',  'monthly': 'Monthly Order'}
+ORDER_TABS  = {'mtd': 'MTD Order',  'weekly': 'Weekly order',  'monthly': 'Monthly order'}
 ATTEND_TABS = {'mtd': 'MTD Know',   'weekly': 'Weekly Know',   'monthly': 'Monthly Know'}
 
 DATA_DIR   = os.path.join(os.path.dirname(__file__), '..', 'data')
