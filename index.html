@@ -177,7 +177,8 @@ tbody tr:hover{background:#f0ebe4}
 // ================================================================
 if(typeof google==='undefined'||!google.script){
   window._staticMode=true;
-  var _fetchJSON=function(url){return fetch(url).then(function(r){if(!r.ok)throw new Error(r.status);return r.json();});};
+  var _cbust='?t='+Date.now();
+  var _fetchJSON=function(url){return fetch(url+_cbust).then(function(r){if(!r.ok)throw new Error(r.status);return r.json();});};
   var _dataFetchers={
     getInitialData:function(){
       return Promise.all([
@@ -281,14 +282,37 @@ if(typeof google==='undefined'||!google.script){
     });
   })();
 
-  // Simple login wall for static mode
+  // Login wall for static mode — proper HTML form (prompt() is blocked in modern browsers)
   (function(){
     var stored=localStorage.getItem('cpo_static_user');
     if(stored){window._staticUserEmail=stored;return;}
-    var email=prompt('Enter your email to continue:');
-    if(!email){document.body.innerHTML='<div style="text-align:center;padding:60px;font-family:sans-serif">Access denied.</div>';return;}
-    localStorage.setItem('cpo_static_user',email);
-    window._staticUserEmail=email;
+    // Inject login overlay
+    var overlay=document.createElement('div');
+    overlay.id='static-login-overlay';
+    overlay.style.cssText='position:fixed;inset:0;background:#411517;display:flex;align-items:center;justify-content:center;z-index:99999;';
+    overlay.innerHTML='<div style="background:#fff;border-radius:12px;padding:40px 48px;max-width:400px;width:90%;text-align:center;box-shadow:0 8px 40px rgba(0,0,0,.4)">'
+      +'<div style="font-size:28px;font-weight:700;color:#FF5A00;margin-bottom:4px;">talabat LS</div>'
+      +'<div style="color:#411517;font-weight:600;margin-bottom:28px;">CPO Check</div>'
+      +'<input id="static-login-input" type="email" placeholder="Enter your email" autocomplete="email" style="width:100%;box-sizing:border-box;padding:12px 14px;border:1.5px solid #ddd;border-radius:8px;font-size:15px;margin-bottom:16px;outline:none;" />'
+      +'<button id="static-login-btn" style="width:100%;padding:12px;background:#FF5A00;color:#fff;border:none;border-radius:8px;font-size:15px;font-weight:600;cursor:pointer;">Continue</button>'
+      +'<div id="static-login-err" style="color:#c00;margin-top:10px;font-size:13px;display:none;"></div>'
+      +'</div>';
+    document.body.appendChild(overlay);
+    function doLogin(){
+      var email=(document.getElementById('static-login-input').value||'').trim().toLowerCase();
+      if(!email||!email.includes('@')){
+        var e=document.getElementById('static-login-err');e.style.display='';e.textContent='Enter a valid email.';return;
+      }
+      localStorage.setItem('cpo_static_user',email);
+      window._staticUserEmail=email;
+      document.getElementById('static-login-overlay').remove();
+    }
+    document.getElementById('static-login-btn').addEventListener('click',doLogin);
+    document.getElementById('static-login-input').addEventListener('keydown',function(e){if(e.key==='Enter')doLogin();});
+    // Pause execution until login completes — done via overlay removal triggering APP init
+    // We need to defer the rest of the app init; patch getInitialData to wait
+    window._staticLoginPending=true;
+    var _origInit=window._staticShimReady;
   })();
 }
 // ================================================================
