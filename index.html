@@ -175,7 +175,7 @@ tbody tr:hover{background:#f0ebe4}
 // When running on GitHub Pages, this intercepts all server calls.
 // When running inside GAS, google.script.run is defined natively and this shim is never used.
 // ================================================================
-if(typeof google==='undefined'||!google.script){
+if(typeof google==='undefined'||!google.script||window.location.hostname.indexOf('github.io')>=0||window.location.protocol==='file:'){
   window._staticMode=true;
   var _cbust='?t='+Date.now();
   var _fetchJSON=function(url){return fetch(url+_cbust).then(function(r){if(!r.ok)throw new Error(r.status);return r.json();});};
