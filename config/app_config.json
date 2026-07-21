@@ -31,9 +31,18 @@
   ],
   "working_days": [],
   "optimizer": {
-    "utrThreshold": 5,
-    "cpoTarget": 3.5,
+    "currency": "AED",
+    "actionThreshold": 4,
+    "criticalThreshold": 20,
     "relieverAttendancePct": 25,
-    "closureMaxKm": 5
+    "relieverMinPickers": 3,
+    "lowOrderPerDay": 10,
+    "closureOrdersPerWeek": 50,
+    "proximityRadiusKm": 5,
+    "proximityDriveMin": 10,
+    "otUTRThreshold": 4,
+    "edgeOrderThreshold": 1,
+    "edgeGMVThreshold": 50,
+    "weekdayDayOffOnly": 1
   }
 }
