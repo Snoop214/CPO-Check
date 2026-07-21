@@ -195,6 +195,7 @@ if(typeof google==='undefined'||!google.script||window.location.hostname.indexOf
             hourly=res[4],gmv=res[5],timing=res[6],users=res[7];
         var userEmail=window._staticUserEmail||'';
         var userRec=(users||[]).filter(function(u){return u.email===userEmail;})[0]||{email:userEmail,role:'Admin',name:''};
+        window._staticUsers=users||[];
         return {
           periodsData:{
             mtd:    {orderDates:meta.dates.mtd||[]},
@@ -231,6 +232,12 @@ if(typeof google==='undefined'||!google.script||window.location.hostname.indexOf
     },
     getHistoricalTrendData:function(period,metric,filters){
       return Promise.resolve({labels:[],datasets:[],tableData:[]});
+    },
+    loadUsers:function(){
+      return Promise.resolve(window._staticUsers||[]);
+    },
+    getSupervisorList:function(){
+      return Promise.resolve([]);
     },
   };
   // Build the google.script.run shim
