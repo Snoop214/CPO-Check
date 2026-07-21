@@ -3,5 +3,11 @@
     "email": "soe.naing@talabat.com",
     "role": "Admin",
     "name": "Soe Naing"
+  },
+  {
+    "email": "shaik.ateef@talabat.com",
+    "role": "manager",
+    "name": "",
+    "supervisorName": ""
   }
 ]
