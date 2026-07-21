@@ -38,4 +38,5 @@ jobs:
           git add data/
           # only commit if something changed
           git diff --cached --quiet || git commit -m "chore: refresh CPO data [$(date -u +%Y-%m-%dT%H:%M)Z]"
+          git pull --rebase origin main
           git push
