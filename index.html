@@ -3015,6 +3015,7 @@ function loadUsersTable(){
       t+='<td><span class="tag '+cls+'">'+u.role+'</span></td><td>'+(u.supervisorName||'—')+'</td>';
       t+='<td><span class="tag" style="background:'+(isRev?'#fef2f2':'#ecfdf5')+';color:'+(isRev?'#dc2626':'#059669')+'">'+(isRev?'Revoked':'Active')+'</span></td>';
       t+='<td style="text-align:right">';
+      t+='<button class="btn btn-sm btn-outline" style="color:var(--primary)" onclick="sendInviteAction(\''+u.email+'\',\''+u.role+'\')"><i class="fas fa-envelope"></i></button> ';
       if(!isMe){
         t+='<button class="btn btn-sm btn-outline" onclick="editUserAction(\''+u.email+'\',\''+u.role+'\',\''+(u.supervisorName||'')+'\')"><i class="fas fa-edit"></i></button> ';
         if(isRev)t+='<button class="btn btn-sm btn-outline" style="color:var(--success)" onclick="reinstateUserAction(\''+u.email+'\')"><i class="fas fa-undo"></i></button> ';
@@ -3035,6 +3036,12 @@ function addUserAction(){
   google.script.run.withSuccessHandler(function(r){if(r&&r.error){showToast(r.error,'error');return;}showToast('User added & invited','success');document.getElementById('uEmail').value='';loadUsersTable();}).addUser(email,role,sup);
 }
 function editUserAction(email,role,sup){showToast('Edit: change role via remove + re-add for now','error');}
+function sendInviteAction(email,role){
+  var url='https://snoop214.github.io/CPO-Check/';
+  var subject=encodeURIComponent('talabat LS — CPO Check access');
+  var body=encodeURIComponent('Hi,\n\nYou have been granted '+role+' access to the talabat LS CPO Check dashboard.\n\nOpen it here:\n'+url+'\n\nLog in with this email address: '+email+'\n\nRegards,\n'+((APP.user&&APP.user.name)||'Admin'));
+  window.open('mailto:'+email+'?subject='+subject+'&body='+body);
+}
 function revokeUserAction(email){showConfirm('Revoke access for '+email+'?',function(){google.script.run.withSuccessHandler(function(){showToast('Revoked','success');loadUsersTable();}).revokeUser(email);});}
 function reinstateUserAction(email){google.script.run.withSuccessHandler(function(){showToast('Reinstated','success');loadUsersTable();}).reinstateUser(email);}
 function removeUserAction(email){showConfirm('Permanently delete '+email+'?',function(){google.script.run.withSuccessHandler(function(){showToast('Removed','success');loadUsersTable();}).removeUser(email);});}
