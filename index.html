@@ -1856,6 +1856,10 @@ function calcAllOptions(store){
       netFull:pSavF-rF,netThis:pSavT-rT,
       breakdown:[{l:'Picker saving ('+pickersReduced+' removed)',v:pSavF,sign:1},{l:'Reliever cost for '+minPickers+' remaining',v:rF,sign:-1}],
       changes:{pickers:currentPickers+'→'+minPickers,hours:'unchanged',ot:otUntrim>0?otUntrim+' hrs (unchanged)':'—'},
+      evidence:{peakHr:peakHr,peakOrders:Math.round(peakOrders*10)/10,minPickers:minPickers,utrThr:utrThr,
+        storeHrs:snOpen!=null?_fmtHalf(snOpen)+' – '+_fmtHalf(snClose):null,
+        dayOffDays:Math.round((effWDays/6)*10)/10,dailyRateRnd:Math.round(dailyRate),
+        pickersAfter:minPickers,relFull:rF},
       newPickerCPO:store.orders>0?Math.round(newPC/store.orders*100)/100:null,
       oldChCPO:chs.old,newChCPO:chs.nw,notes:[]});
   }
@@ -1893,6 +1897,13 @@ function calcAllOptions(store){
         netFull:(tPicF+tOTF)-tRF,netThis:(tPicT+tOTT)-tRT,
         breakdown:bkd,
         changes:{pickers:currentPickers+'→'+minPickersTrim,hours:hoursChange,ot:otUntrim+'→'+otTrim+' hrs'},
+        evidence:{rawOpen:timing?timing.openHr:null,rawClose:timing?timing.closeHr:null,
+          snOpen:snOpen,snClose:snClose,
+          trimStartHrs:trimS.map(function(hh){return{hr:hh,orders:Math.round((hourly[hh]||0)*10)/10,gmv:gmv?Math.round(gmv[hh]||0):0};}),
+          trimEndHrs:trimE.map(function(hh){return{hr:hh,orders:Math.round((hourly[hh]||0)*10)/10,gmv:gmv?Math.round(gmv[hh]||0):0};}),
+          peakInTrim:Math.round(peakInTrim*10)/10,minPickersTrim:minPickersTrim,utrThr:utrThr,
+          dayOffDays:Math.round((effWDays/6)*10)/10,dailyRateRnd:Math.round(dailyRate),
+          pickersAfter:minPickersTrim,relFull:tRF,otElimHrs:otUntrim-otTrim,edgeThr:edgeThr,edgeGmv:edgeGmv},
         newPickerCPO:store.orders>0?Math.round(tNewPC/store.orders*100)/100:null,
         oldChCPO:tChs.old,newChCPO:tChs.nw,notes:[]});
     }else if(canReduceAfterTrim&&!trimAddsOT){
@@ -1903,6 +1914,11 @@ function calcAllOptions(store){
         netFull:oF,netThis:oT,
         breakdown:[{l:'OT eliminated',v:oF,sign:1}],
         changes:{pickers:'unchanged',hours:hoursChange,ot:otUntrim+'→'+otTrim+' hrs'},
+        evidence:{rawOpen:timing?timing.openHr:null,rawClose:timing?timing.closeHr:null,
+          snOpen:snOpen,snClose:snClose,
+          trimStartHrs:trimS.map(function(hh){return{hr:hh,orders:Math.round((hourly[hh]||0)*10)/10,gmv:gmv?Math.round(gmv[hh]||0):0};}),
+          trimEndHrs:trimE.map(function(hh){return{hr:hh,orders:Math.round((hourly[hh]||0)*10)/10,gmv:gmv?Math.round(gmv[hh]||0):0};}),
+          peakInTrim:Math.round(peakInTrim*10)/10,otElimHrs:otUntrim-otTrim,edgeThr:edgeThr,edgeGmv:edgeGmv},
         newPickerCPO:null,oldChCPO:null,newChCPO:null,
         notes:['Headcount at minimum — peak inside active window: '+peakInTrim+' orders/hr needs '+minPickersTrim+' pickers (threshold: '+utrThr+')']});
     }else{
@@ -1997,6 +2013,49 @@ function renderStoreOptions(result){
       if(opt.ordersLost){h+='<span style="color:var(--muted)">Orders lost</span><span style="color:#dc2626;font-weight:600">'+fmt(opt.ordersLost)+'/mo</span>';}
       h+='</div>';
       opt.notes.forEach(function(n){h+='<div style="background:#fffbeb;border-radius:5px;padding:4px 8px;font-size:10px;color:#92400e;margin-top:6px"><i class="fas fa-exclamation-triangle" style="margin-right:4px"></i>'+n+'</div>';});
+      if(opt.evidence){
+        var ev=opt.evidence;
+        h+='<div style="background:#f0f9ff;border:1px solid #bae6fd;border-radius:6px;padding:9px 11px;font-size:11px;margin-top:8px">';
+        h+='<div style="font-weight:700;color:#0369a1;margin-bottom:6px;font-size:10px;text-transform:uppercase;letter-spacing:.4px"><i class="fas fa-search" style="margin-right:5px"></i>Evidence</div>';
+        if(ev.peakOrders!=null){
+          h+='<div style="color:#374151;margin-bottom:5px"><i class="fas fa-chart-line" style="color:#0284c7;margin-right:5px;width:12px"></i>'
+            +'Peak demand: <b>'+_fmtH(ev.peakHr)+' = '+ev.peakOrders+' avg orders/hr</b> → min <b>'+ev.minPickers+' picker'+(ev.minPickers>1?'s':'')+' @ UTR '+ev.utrThr+'</b>'
+            +(ev.storeHrs?' &nbsp;<span style="color:#9ca3af">|</span>&nbsp; Store window: <b>'+ev.storeHrs+'</b>':'')+'</div>';
+        }
+        if(ev.peakInTrim!=null){
+          h+='<div style="color:#374151;margin-bottom:5px"><i class="fas fa-chart-line" style="color:#0284c7;margin-right:5px;width:12px"></i>'
+            +'Peak in trimmed window: <b>'+ev.peakInTrim+' avg orders/hr</b> → min <b>'+ev.minPickersTrim+' picker'+(ev.minPickersTrim>1?'s':'')+' @ UTR '+ev.utrThr+'</b></div>';
+        }
+        if((ev.trimStartHrs&&ev.trimStartHrs.length)||(ev.trimEndHrs&&ev.trimEndHrs.length)){
+          var allTrimmed=(ev.trimStartHrs||[]).concat(ev.trimEndHrs||[]);
+          h+='<div style="color:#374151;margin-bottom:4px"><i class="fas fa-scissors" style="color:#0284c7;margin-right:5px;width:12px"></i>'
+            +'Edge hours removed <span style="color:#6b7280">(avg orders &lt; '+ev.edgeThr+' <i>and</i> GMV &lt; AED '+ev.edgeGmv+')</span>:</div>';
+          h+='<div style="display:flex;flex-wrap:wrap;gap:4px;margin-bottom:6px;padding-left:17px">';
+          allTrimmed.forEach(function(t){
+            h+='<span style="background:#fee2e2;color:#991b1b;padding:2px 8px;border-radius:4px;font-size:10px;font-weight:600">'
+              +_fmtH(t.hr)+': '+t.orders+' ord &nbsp;·&nbsp; AED '+t.gmv+' GMV</span>';
+          });
+          h+='</div>';
+        }
+        if(ev.rawOpen!=null&&ev.snOpen!=null){
+          var snapParts=[];
+          if(Math.abs(ev.rawOpen-ev.snOpen)>0.01)snapParts.push('open '+_fmtHalf(ev.rawOpen)+' → <b>'+_fmtHalf(ev.snOpen)+'</b> (snapped up)');
+          if(Math.abs(ev.rawClose-ev.snClose)>0.01)snapParts.push('close '+_fmtHalf(ev.rawClose)+' → <b>'+_fmtHalf(ev.snClose)+'</b> (snapped down)');
+          if(snapParts.length){
+            h+='<div style="color:#6b7280;margin-bottom:5px;font-size:10px"><i class="fas fa-clock" style="color:#0284c7;margin-right:5px;width:12px"></i>Timing snap: '+snapParts.join(' &nbsp;&nbsp; ')+'</div>';
+          }
+        }
+        if(ev.otElimHrs!=null&&ev.otElimHrs>0){
+          h+='<div style="color:#374151;margin-bottom:5px"><i class="fas fa-ban" style="color:#0284c7;margin-right:5px;width:12px"></i>'
+            +'OT eliminated by trim: <b>'+ev.otElimHrs+' hrs/day</b></div>';
+        }
+        if(ev.dayOffDays!=null){
+          h+='<div style="color:#374151"><i class="fas fa-calendar-minus" style="color:#0284c7;margin-right:5px;width:12px"></i>'
+            +'Day-off coverage: '+ev.pickersAfter+' picker'+(ev.pickersAfter>1?'s':'')+' × <b>'+ev.dayOffDays+' offs/mo</b> × AED '+ev.dailyRateRnd+'/day'
+            +' = <b>AED '+fmt(ev.relFull)+'/mo</b> <span style="color:#6b7280">(weekday offs only)</span></div>';
+        }
+        h+='</div>';
+      }
       h+='</div>';
     });
     h+='</div>';
@@ -2096,6 +2155,11 @@ function renderOptimizerView(){
     var rosterTip=store.pickerCount>concPickers?' title="Roster: '+store.pickerCount+' total (incl. relievers)"':'';
     h+='<div style="text-align:center"'+rosterTip+'><div style="font-size:10px;color:var(--muted)">Pickers/day</div><div style="font-size:14px;font-weight:600">'+concPickers+(store.pickerCount>concPickers?'<span style="font-size:10px;color:var(--muted)"> /'+store.pickerCount+'</span>':'')+'</div></div>';
     h+='<div style="text-align:center"><div style="font-size:10px;color:var(--muted)">UTR</div><div style="font-size:14px;font-weight:600">'+(store.utr?store.utr.toFixed(1):'—')+'</div></div>';
+    var sTim=_getStoreTiming(store.vendorId);
+    if(sTim){var snO2=_snapHalf(sTim.openHr,'up'),snC2=_snapHalf(sTim.closeHr,'down');h+='<div style="text-align:center"><div style="font-size:10px;color:var(--muted)">Hours</div><div style="font-size:12px;font-weight:600">'+_fmtHalf(snO2)+'–'+_fmtHalf(snC2)+'</div></div>';}
+    var sHrly=_getStoreHourly(store.vendorId),sPeak=0,sPeakH=0;
+    if(sHrly){for(var px=0;px<24;px++){if((sHrly[px]||0)>sPeak){sPeak=sHrly[px];sPeakH=px;}}}
+    if(sPeak>0){h+='<div style="text-align:center"><div style="font-size:10px;color:var(--muted)">Peak</div><div style="font-size:12px;font-weight:600">'+_fmtH(sPeakH)+' = '+Math.round(sPeak*10)/10+'</div></div>';}
     var topOpt=optResult.options[0];
     if(topOpt&&topOpt.netFull>0)h+='<div style="text-align:center"><div style="font-size:10px;color:#059669">Best saving</div><div style="font-size:14px;font-weight:700;color:#059669">'+_getCurrency()+' '+fmt(topOpt.netFull)+'/mo</div></div>';
     h+='</div></div>';
@@ -2519,41 +2583,50 @@ function renderFetchAllTab(){
   h+='</div>';
 
   // Load status + history log
-  google.script.run.withSuccessHandler(function(s){
-    var el=document.getElementById('fetchAllStatus'); if(!el)return;
-    var btns='<div style="display:flex;gap:8px;flex-shrink:0">'+
-      '<button class="btn btn-outline" onclick="runInBackground()" id="fetchBgBtn" style="font-size:11px;padding:7px 12px"><i class="fas fa-cloud-upload-alt" style="margin-right:5px"></i>Run in Background</button>'+
-      '<button class="btn btn-primary" onclick="startFetchAll()" id="fetchAllBtn" style="font-size:12px;padding:8px 16px"><i class="fas fa-play" style="margin-right:5px"></i>Trigger Fetch</button>'+
-      '</div>';
-    if(s.done){
+  (function(){
+    function _showFetchStatus(s){
+      var el=document.getElementById('fetchAllStatus'); if(!el)return;
+      var btns=window._staticMode
+        ?'<div style="font-size:11px;color:var(--muted);font-style:italic">Data updated automatically by GitHub Actions</div>'
+        :'<div style="display:flex;gap:8px;flex-shrink:0">'+
+          '<button class="btn btn-outline" onclick="runInBackground()" id="fetchBgBtn" style="font-size:11px;padding:7px 12px"><i class="fas fa-cloud-upload-alt" style="margin-right:5px"></i>Run in Background</button>'+
+          '<button class="btn btn-primary" onclick="startFetchAll()" id="fetchAllBtn" style="font-size:12px;padding:8px 16px"><i class="fas fa-play" style="margin-right:5px"></i>Trigger Fetch</button>'+
+          '</div>';
       el.innerHTML='<div style="display:flex;align-items:center;gap:10px;background:#ecfdf5;border:1.5px solid #6ee7b7;border-radius:var(--radius);padding:12px 16px;font-size:12px;color:#065f46">'+
         '<i class="fas fa-check-circle" style="font-size:20px;flex-shrink:0"></i>'+
-        '<div style="flex:1"><strong>All data pre-computed</strong> — instant tab switches for all users<br>'+
-        '<span style="font-size:11px;opacity:.8">Last run: '+formatTS(s.timestamp)+(s.fileCount?' &nbsp;&middot;&nbsp; '+s.fileCount+' files on Drive':'')+'</span></div>'+
+        '<div style="flex:1"><strong>Data up to date</strong>'+(s.timestamp?' — Last run: '+formatTS(s.timestamp):'')+'</div>'+
         btns+'</div>';
-    } else {
-      el.innerHTML='<div style="display:flex;align-items:center;gap:10px;background:#fef3c7;border:1.5px solid #fcd34d;border-radius:var(--radius);padding:12px 16px;font-size:12px;color:#92400e">'+
-        '<i class="fas fa-exclamation-triangle" style="font-size:20px;flex-shrink:0"></i>'+
-        '<div style="flex:1"><strong>Not yet fetched</strong> — users wait ~5-10s per tab click<br>'+
-        '<span style="font-size:11px;opacity:.8">Run Trigger Fetch to pre-compute all data</span></div>'+
-        btns+'</div>';
+      renderFetchHistory(s.log||[]);
     }
-    renderFetchHistory(s.log||[]);
-  }).getPrecomputeStatus();
+    if(window._staticMode){
+      fetch('data/meta.json?t='+Date.now()).then(function(r){return r.ok?r.json():{};})
+        .then(function(m){_showFetchStatus({done:true,timestamp:m.timestamp,log:[]});})
+        .catch(function(){_showFetchStatus({done:true,log:[]});});
+    } else {
+      google.script.run.withSuccessHandler(_showFetchStatus).getPrecomputeStatus();
+    }
+  })();
 
   // Load auto-schedule config
-  google.script.run.withSuccessHandler(function(cfg){
-    var desc=document.getElementById('autoFetchDesc');
-    var acts=document.getElementById('autoFetchActions');
-    if(!desc||!acts)return;
-    if(cfg.hours&&cfg.activeTriggers>0){
-      desc.innerHTML='<span style="color:#059669;font-weight:600">Active</span> &mdash; runs daily at <b>'+cfg.hours[0]+':00</b> and <b>'+cfg.hours[1]+':00</b>';
-      acts.innerHTML='<button class="btn btn-outline" onclick="disableAutoFetchUI()" style="font-size:11px;padding:7px 12px;color:var(--danger)"><i class="fas fa-times" style="margin-right:4px"></i>Disable</button>';
-    } else {
-      desc.innerHTML='Off &mdash; fetch runs only when triggered manually';
-      acts.innerHTML='<button class="btn btn-outline" onclick="configureAutoFetch()" style="font-size:11px;padding:7px 12px"><i class="fas fa-clock" style="margin-right:4px"></i>Set Schedule</button>';
+  (function(){
+    function _showAutoSchedule(cfg){
+      var desc=document.getElementById('autoFetchDesc');
+      var acts=document.getElementById('autoFetchActions');
+      if(!desc||!acts)return;
+      if(cfg.hours&&cfg.activeTriggers>0){
+        desc.innerHTML='<span style="color:#059669;font-weight:600">Active</span> &mdash; runs daily at <b>'+cfg.hours[0]+':00</b> and <b>'+cfg.hours[1]+':00</b> UTC';
+        acts.innerHTML=window._staticMode?'':'<button class="btn btn-outline" onclick="disableAutoFetchUI()" style="font-size:11px;padding:7px 12px;color:var(--danger)"><i class="fas fa-times" style="margin-right:4px"></i>Disable</button>';
+      } else {
+        desc.innerHTML='Off &mdash; fetch runs only when triggered manually';
+        acts.innerHTML=window._staticMode?'':'<button class="btn btn-outline" onclick="configureAutoFetch()" style="font-size:11px;padding:7px 12px"><i class="fas fa-clock" style="margin-right:4px"></i>Set Schedule</button>';
+      }
     }
-  }).getAutoFetchConfig();
+    if(window._staticMode){
+      _showAutoSchedule({hours:[6,12],activeTriggers:2});
+    } else {
+      google.script.run.withSuccessHandler(_showAutoSchedule).getAutoFetchConfig();
+    }
+  })();
 
   return h;
 }
