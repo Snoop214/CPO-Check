@@ -1553,6 +1553,61 @@ function _fmtHalf(h){
   if(whole===0)suffix='am';
   return label+(half?':30':':00')+suffix;
 }
+// Spread N pickers evenly across store window; each works contractHrs + 1hr break on-site
+function _calcShiftLayout(open,close,contractHrs,numPickers){
+  if(open==null||close==null||numPickers<=0)return[];
+  var onSite=contractHrs+1;
+  var storeH=close-open;
+  if(numPickers===1)return[{n:1,s:open,e:Math.min(open+onSite,close)}];
+  var spread=Math.max(0,storeH-onSite);
+  var gap=spread/(numPickers-1);
+  var shifts=[];
+  for(var i=0;i<numPickers;i++){var s=open+i*gap;shifts.push({n:i+1,s:Math.round(s*2)/2,e:Math.round((s+onSite)*2)/2});}
+  return shifts;
+}
+function _renderShiftSchedule(open,close,contractHrs,numPickers,peakHr){
+  if(open==null||close==null)return'';
+  var shifts=_calcShiftLayout(open,close,contractHrs,numPickers);
+  var span=close-open;
+  var colors=['#3b82f6','#10b981','#f59e0b','#8b5cf6','#ef4444'];
+  var h='<div style="margin-top:10px;padding-top:8px;border-top:1px dashed #bae6fd">';
+  h+='<div style="font-size:10px;font-weight:700;color:#0369a1;margin-bottom:6px;text-transform:uppercase;letter-spacing:.4px"><i class="fas fa-calendar-alt" style="margin-right:5px"></i>Proposed Shift Schedule</div>';
+  h+='<div style="display:grid;grid-template-columns:auto 1fr;gap:3px 14px;font-size:11px;margin-bottom:8px">';
+  shifts.forEach(function(sh){
+    h+='<span style="color:#374151;font-weight:600">Picker '+sh.n+'</span><span style="color:#0284c7">'+_fmtHalf(sh.s)+'  –  '+_fmtHalf(sh.e)+'  <span style="color:#9ca3af">('+contractHrs+' hrs work + 1 hr break)</span></span>';
+  });
+  var relNote=numPickers>1?numPickers+' pickers × 1 weekday off each = '+numPickers+' reliever days/wk':'1 reliever day/wk';
+  h+='<span style="color:#374151;font-weight:600">Day-off</span><span style="color:#6b7280">'+relNote+' (Mon–Fri)</span>';
+  h+='</div>';
+  h+='<div style="position:relative;height:32px;border-radius:4px;overflow:visible;margin-bottom:3px">';
+  h+='<div style="position:absolute;left:0;right:0;top:6px;height:20px;background:#e2e8f0;border-radius:3px"></div>';
+  shifts.forEach(function(sh,i){
+    var l=Math.max(0,(sh.s-open)/span*100);
+    var r=Math.max(0,(close-sh.e)/span*100);
+    h+='<div style="position:absolute;left:'+l+'%;right:'+r+'%;top:'+(6+i*2)+'px;height:'+(20-i*2)+'px;background:'+colors[i%colors.length]+';opacity:0.78;border-radius:3px" title="Picker '+sh.n+': '+_fmtHalf(sh.s)+'–'+_fmtHalf(sh.e)+'"></div>';
+  });
+  var otStart=open+contractHrs+1;
+  if(otStart<close){
+    var otL=(otStart-open)/span*100;
+    h+='<div style="position:absolute;left:'+otL+'%;right:0;top:0;height:32px;background:rgba(220,38,38,0.09);border-left:2px dashed #dc2626;border-radius:0 3px 3px 0"></div>';
+    h+='<div style="position:absolute;left:'+otL+'%;bottom:0;font-size:9px;color:#dc2626;font-weight:700;padding-left:2px">OT</div>';
+  }
+  if(peakHr!=null&&peakHr>=open&&peakHr<=close){
+    var pp=(peakHr-open)/span*100;
+    h+='<div style="position:absolute;left:'+pp+'%;top:0;width:2px;height:32px;background:#dc2626;z-index:4"></div>';
+    h+='<div style="position:absolute;left:'+pp+'%;top:0;font-size:9px;color:#dc2626;font-weight:700;padding-left:3px;z-index:5;white-space:nowrap">⚡'+_fmtH(peakHr)+'</div>';
+  }
+  h+='</div>';
+  h+='<div style="position:relative;height:14px;margin-bottom:4px">';
+  for(var lh=Math.ceil(open);lh<=close;lh++){if(lh%2===0){var lp=(lh-open)/span*100;h+='<span style="position:absolute;left:'+lp+'%;transform:translateX(-50%);font-size:9px;color:#9ca3af">'+_fmtH(lh)+'</span>';}}
+  h+='</div>';
+  h+='<div style="display:flex;gap:8px;flex-wrap:wrap;font-size:10px;color:#6b7280">';
+  shifts.forEach(function(sh,i){h+='<span><span style="display:inline-block;width:10px;height:10px;background:'+colors[i%colors.length]+';border-radius:2px;margin-right:3px;vertical-align:middle"></span>Picker '+sh.n+'</span>';});
+  if(otStart<close)h+='<span><span style="display:inline-block;width:10px;height:10px;background:rgba(220,38,38,0.2);border:1px dashed #dc2626;border-radius:2px;margin-right:3px;vertical-align:middle"></span>OT zone</span>';
+  if(peakHr!=null&&peakHr>=open&&peakHr<=close)h+='<span><span style="display:inline-block;width:2px;height:10px;background:#dc2626;margin-right:3px;vertical-align:middle"></span>Peak hour</span>';
+  h+='</div></div>';
+  return h;
+}
 function _snapHalf(h,dir){
   // dir 'up' = ceil to next :00 or :30 (earliest picker can start)
   // dir 'down' = floor to prev :00 or :30 (latest picker must finish)
@@ -1821,11 +1876,9 @@ function calcAllOptions(store){
     var tr=_trimEdgeHours(snOpen,snClose,hourly,gmv,edgeThr,edgeGmv);
     adjOpen=tr.open;adjClose=tr.close;trimS=tr.trimStart;trimE=tr.trimEnd;
   }
-  // Peak scan restricted to store operating window only — not all 24 hours
+  // Peak = busiest hour across full day; -1 means no data (avoids midnight-with-0 as fake peak)
   var peakOrders=0,peakHr=-1;
-  var scanFrom=snOpen!=null?Math.floor(snOpen):0;
-  var scanTo=snClose!=null?Math.ceil(snClose):24;
-  if(hourly){for(var hx=scanFrom;hx<scanTo&&hx<24;hx++){if((hourly[hx]||0)>peakOrders){peakOrders=hourly[hx];peakHr=hx;}}}
+  if(hourly){for(var hx=0;hx<24;hx++){if((hourly[hx]||0)>peakOrders){peakOrders=hourly[hx];peakHr=hx;}}}
   var minPickers=peakOrders>0?Math.max(1,Math.ceil(peakOrders/utrThr)):1;
   var canReduceHead=currentPickers>minPickers;
   var pickersReduced=Math.max(0,currentPickers-minPickers);
@@ -1863,6 +1916,7 @@ function calcAllOptions(store){
       changes:{pickers:currentPickers+'→'+minPickers,hours:'unchanged',ot:otUntrim>0?otUntrim+' hrs (unchanged)':'—'},
       evidence:{peakHr:peakHr>=0?peakHr:null,peakOrders:peakHr>=0?Math.round(peakOrders*10)/10:null,
         noHourlyData:!hourly||peakHr<0,minPickers:minPickers,utrThr:utrThr,
+        snOpen:snOpen,snClose:snClose,contractHrs:contractHrs,
         storeHrs:snOpen!=null?_fmtHalf(snOpen)+' – '+_fmtHalf(snClose):null,
         dayOffDays:Math.round((effWDays/6)*10)/10,dailyRateRnd:Math.round(dailyRate),
         pickersAfter:minPickers,relFull:rF},
@@ -1905,7 +1959,7 @@ function calcAllOptions(store){
         breakdown:bkd,
         changes:{pickers:currentPickers+'→'+minPickersTrim,hours:hoursChange,ot:otUntrim+'→'+otTrim+' hrs'},
         evidence:{rawOpen:timing?timing.openHr:null,rawClose:timing?timing.closeHr:null,
-          snOpen:snOpen,snClose:snClose,
+          snOpen:snOpen,snClose:snClose,adjOpen:adjOpen,adjClose:adjClose,contractHrs:contractHrs,
           trimStartHrs:trimS.map(function(hh){return{hr:hh,orders:Math.round((hourly[hh]||0)*10)/10,gmv:gmv?Math.round(gmv[hh]||0):0};}),
           trimEndHrs:trimE.map(function(hh){return{hr:hh,orders:Math.round((hourly[hh]||0)*10)/10,gmv:gmv?Math.round(gmv[hh]||0):0};}),
           peakInTrim:Math.round(peakInTrim*10)/10,minPickersTrim:minPickersTrim,utrThr:utrThr,
@@ -1922,7 +1976,7 @@ function calcAllOptions(store){
         breakdown:[{l:'OT eliminated',v:oF,sign:1}],
         changes:{pickers:'unchanged',hours:hoursChange,ot:otUntrim+'→'+otTrim+' hrs'},
         evidence:{rawOpen:timing?timing.openHr:null,rawClose:timing?timing.closeHr:null,
-          snOpen:snOpen,snClose:snClose,
+          snOpen:snOpen,snClose:snClose,adjOpen:adjOpen,adjClose:adjClose,contractHrs:contractHrs,
           trimStartHrs:trimS.map(function(hh){return{hr:hh,orders:Math.round((hourly[hh]||0)*10)/10,gmv:gmv?Math.round(gmv[hh]||0):0};}),
           trimEndHrs:trimE.map(function(hh){return{hr:hh,orders:Math.round((hourly[hh]||0)*10)/10,gmv:gmv?Math.round(gmv[hh]||0):0};}),
           peakInTrim:Math.round(peakInTrim*10)/10,otElimHrs:otUntrim-otTrim,edgeThr:edgeThr,edgeGmv:edgeGmv},
@@ -2068,6 +2122,11 @@ function renderStoreOptions(result){
           h+='<div style="color:#374151"><i class="fas fa-calendar-minus" style="color:#0284c7;margin-right:5px;width:12px"></i>'
             +'Day-off coverage: '+ev.pickersAfter+' picker'+(ev.pickersAfter>1?'s':'')+' × <b>'+ev.dayOffDays+' offs/mo</b> × AED '+ev.dailyRateRnd+'/day'
             +' = <b>AED '+fmt(ev.relFull)+'/mo</b> <span style="color:#6b7280">(weekday offs only)</span></div>';
+        }
+        var schedOpen=ev.adjOpen!=null?ev.adjOpen:ev.snOpen;
+        var schedClose=ev.adjClose!=null?ev.adjClose:ev.snClose;
+        if(schedOpen!=null&&ev.contractHrs&&ev.pickersAfter>0){
+          h+=_renderShiftSchedule(schedOpen,schedClose,ev.contractHrs,ev.pickersAfter,ev.peakHr);
         }
         h+='</div>';
       }
