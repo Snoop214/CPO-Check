@@ -37,7 +37,7 @@
     "relieverAttendancePct": 25,
     "relieverMinPickers": 3,
     "lowOrderPerDay": 10,
-    "closureOrdersPerWeek": 50,
+    "closureOrdersPerWeek": 20,
     "proximityRadiusKm": 5,
     "proximityDriveMin": 10,
     "otUTRThreshold": 4,
