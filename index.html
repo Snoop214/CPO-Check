@@ -1810,11 +1810,8 @@ function calcAllOptions(store){
   var hourly=_getStoreHourly(store.vendorId);
   var gmv=_getStoreHourlyGMV(store.vendorId);
   var utrThr=cfg.otUTRThreshold||5;
-  var peakOrders=0,peakHr=0;
-  if(hourly){for(var hx=0;hx<24;hx++){if((hourly[hx]||0)>peakOrders){peakOrders=hourly[hx];peakHr=hx;}}}
-  var minPickers=peakOrders>0?Math.max(1,Math.ceil(peakOrders/utrThr)):1;
-  var canReduceHead=currentPickers>minPickers;
-  var pickersReduced=Math.max(0,currentPickers-minPickers);
+  var lowOrderThr=cfg.lowOrderPerDay||10;
+  var closureThr=cfg.closureOrdersPerWeek||50;
   var timing=_getStoreTiming(store.vendorId);
   var edgeThr=cfg.edgeOrderThreshold||1;
   var edgeGmv=cfg.edgeGMVThreshold||50;
@@ -1824,6 +1821,14 @@ function calcAllOptions(store){
     var tr=_trimEdgeHours(snOpen,snClose,hourly,gmv,edgeThr,edgeGmv);
     adjOpen=tr.open;adjClose=tr.close;trimS=tr.trimStart;trimE=tr.trimEnd;
   }
+  // Peak scan restricted to store operating window only — not all 24 hours
+  var peakOrders=0,peakHr=-1;
+  var scanFrom=snOpen!=null?Math.floor(snOpen):0;
+  var scanTo=snClose!=null?Math.ceil(snClose):24;
+  if(hourly){for(var hx=scanFrom;hx<scanTo&&hx<24;hx++){if((hourly[hx]||0)>peakOrders){peakOrders=hourly[hx];peakHr=hx;}}}
+  var minPickers=peakOrders>0?Math.max(1,Math.ceil(peakOrders/utrThr)):1;
+  var canReduceHead=currentPickers>minPickers;
+  var pickersReduced=Math.max(0,currentPickers-minPickers);
   var untrimHrs=snOpen!=null?(snClose-snOpen):null;
   var trimHrs=adjOpen!=null?(adjClose-adjOpen):untrimHrs;
   var totalShift=contractHrs+1;
@@ -1844,7 +1849,7 @@ function calcAllOptions(store){
   if(currentPickers<=1){
     notViable.push({label:'Reduce headcount',reason:'Already at 1 picker'});
   }else if(!canReduceHead){
-    notViable.push({label:'Reduce headcount',reason:'Peak hour '+_fmtH(peakHr)+' has '+peakOrders+' orders — minimum '+minPickers+' pickers needed at UTR threshold '+utrThr+', already at '+currentPickers});
+    notViable.push({label:'Reduce headcount',reason:peakHr>=0?'Peak hour '+_fmtH(peakHr)+' has '+Math.round(peakOrders*10)/10+' avg orders — min '+minPickers+' pickers needed at UTR '+utrThr+', already at '+currentPickers:'No hourly data — min pickers estimated at '+minPickers+', already at '+currentPickers});
   }else{
     var picLabel=minPickers===1?'1 picker':minPickers+' pickers';
     var pSavF=Math.round(pickersReduced*avgPickerCost);
@@ -1856,7 +1861,8 @@ function calcAllOptions(store){
       netFull:pSavF-rF,netThis:pSavT-rT,
       breakdown:[{l:'Picker saving ('+pickersReduced+' removed)',v:pSavF,sign:1},{l:'Reliever cost for '+minPickers+' remaining',v:rF,sign:-1}],
       changes:{pickers:currentPickers+'→'+minPickers,hours:'unchanged',ot:otUntrim>0?otUntrim+' hrs (unchanged)':'—'},
-      evidence:{peakHr:peakHr,peakOrders:Math.round(peakOrders*10)/10,minPickers:minPickers,utrThr:utrThr,
+      evidence:{peakHr:peakHr>=0?peakHr:null,peakOrders:peakHr>=0?Math.round(peakOrders*10)/10:null,
+        noHourlyData:!hourly||peakHr<0,minPickers:minPickers,utrThr:utrThr,
         storeHrs:snOpen!=null?_fmtHalf(snOpen)+' – '+_fmtHalf(snClose):null,
         dayOffDays:Math.round((effWDays/6)*10)/10,dailyRateRnd:Math.round(dailyRate),
         pickersAfter:minPickers,relFull:rF},
@@ -1866,7 +1872,8 @@ function calcAllOptions(store){
 
   // ── Trim + headcount or trim + OT ──
   if(!hourly){
-    notViable.push({label:'Trim store hours',reason:'No hourly order data for this store'});
+    var volNote=avgOPD>0&&avgOPD<lowOrderThr?' — store averages '+Math.round(avgOPD*10)/10+' orders/day (below '+lowOrderThr+' threshold): timing review strongly recommended':'';
+    notViable.push({label:'Trim store hours',reason:'No hourly order data available'+volNote+'. Run Refresh to load hourly breakdown.'});
   }else if(!timing){
     notViable.push({label:'Trim store hours',reason:'No Sheet3 store timing data for this store'});
   }else{
@@ -1930,6 +1937,8 @@ function calcAllOptions(store){
   var cl=calcClosureScenario(store);
   if(cl.canClose){
     var clNotes=[];
+    var ordersPerWeekCl=Math.round(avgOPD*7);
+    if(ordersPerWeekCl<closureThr)clNotes.push('Low volume: '+ordersPerWeekCl+' orders/wk — below '+closureThr+' orders/wk closure threshold');
     if(!cl.chainImproves)clNotes.push('This store\'s CPO is below chain avg — closure would worsen chain CPO');
     // Nearby store extra manpower cost
     var nearbyD=(APP.allData||[]).filter(function(r){return r.vendorId===cl.nearbyStore.vendorId;})[0]||null;
@@ -1968,8 +1977,10 @@ function calcAllOptions(store){
       newPickerCPO:null,oldChCPO:cl.oldChainCPO,newChCPO:cl.newChainCPO,
       notes:clNotes.concat(nearbyAbsorbNote?[nearbyAbsorbNote]:[])});
   }else{
+    var ordersPerWeekNV=Math.round(avgOPD*7);
     var clR='No same-chain store within '+(cfg.proximityRadiusKm||5)+' km';
     if(cl.nearestStoreName)clR+=' (nearest: '+cl.nearestStoreName+', '+cl.nearestKm+' km away)';
+    if(ordersPerWeekNV<closureThr)clR+=' — low volume ('+ordersPerWeekNV+' orders/wk, threshold '+closureThr+'/wk): widen radius or consider standalone action';
     notViable.push({label:'Store closure',reason:clR});
   }
 
@@ -2017,7 +2028,11 @@ function renderStoreOptions(result){
         var ev=opt.evidence;
         h+='<div style="background:#f0f9ff;border:1px solid #bae6fd;border-radius:6px;padding:9px 11px;font-size:11px;margin-top:8px">';
         h+='<div style="font-weight:700;color:#0369a1;margin-bottom:6px;font-size:10px;text-transform:uppercase;letter-spacing:.4px"><i class="fas fa-search" style="margin-right:5px"></i>Evidence</div>';
-        if(ev.peakOrders!=null){
+        if(ev.noHourlyData){
+          h+='<div style="color:#92400e;margin-bottom:5px;background:#fffbeb;padding:4px 8px;border-radius:4px;font-size:10px"><i class="fas fa-exclamation-triangle" style="color:#f59e0b;margin-right:5px"></i>'
+            +'No per-hour breakdown — min <b>'+ev.minPickers+' picker'+(ev.minPickers>1?'s':'')+' assumed</b>'
+            +(ev.storeHrs?' &nbsp;|&nbsp; Store window: <b>'+ev.storeHrs+'</b>':'')+'</div>';
+        }else if(ev.peakOrders!=null){
           h+='<div style="color:#374151;margin-bottom:5px"><i class="fas fa-chart-line" style="color:#0284c7;margin-right:5px;width:12px"></i>'
             +'Peak demand: <b>'+_fmtH(ev.peakHr)+' = '+ev.peakOrders+' avg orders/hr</b> → min <b>'+ev.minPickers+' picker'+(ev.minPickers>1?'s':'')+' @ UTR '+ev.utrThr+'</b>'
             +(ev.storeHrs?' &nbsp;<span style="color:#9ca3af">|</span>&nbsp; Store window: <b>'+ev.storeHrs+'</b>':'')+'</div>';
