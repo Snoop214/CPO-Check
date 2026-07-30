@@ -313,13 +313,14 @@ def read_hourly_data(gc):
                 for hr in range(min(3, len(data))):
                     hl = [str(c).strip().lower() for c in data[hr]]
                     c_vid   = find_col(hl, ['vendor id', 'vendorid'])
+                    c_day   = find_col(hl, ['local schedule start at day of week', 'day of week'])
                     c_start = find_col(hl, ['local schedule start at time', 'schedule start', 'start time', 'open'])
                     c_end   = find_col(hl, ['local schedule ends at time', 'schedule end', 'end time', 'close'])
                     if c_vid >= 0 and (c_start >= 0 or c_end >= 0):
                         data_start = hr + 1
                         break
                 else:
-                    c_vid, c_start, c_end, data_start = 0, 5, 4, 1
+                    c_vid, c_day, c_start, c_end, data_start = 0, 3, 5, 4, 1
 
                 def extract_hr(s):
                     m = re.search(r'(\d{1,2}):(\d{2})', str(s))
@@ -337,17 +338,39 @@ def read_hourly_data(gc):
                         if h >= base + 0.5: return base + 0.5
                         return base
 
-                seen = set()
+                # Accumulate every day-of-week row per store (not just the first) — merge
+                # split-shift rows for the same day by widening to their combined span.
+                day_spans = {}
                 for row in data[data_start:]:
                     vid = str(row[c_vid]).strip() if c_vid < len(row) else ''
-                    if not vid or not vid.isdigit() or vid in seen: continue
-                    seen.add(vid)
+                    if not vid or not vid.isdigit(): continue
+                    day = str(row[c_day]).strip() if c_day >= 0 and c_day < len(row) else ''
                     op_raw = row[c_start] if c_start >= 0 and c_start < len(row) else ''
                     cl_raw = row[c_end]   if c_end   >= 0 and c_end   < len(row) else ''
                     op = extract_hr(op_raw)
                     cl = extract_hr(cl_raw)
-                    if op is not None and cl is not None:
-                        timing[vid] = {'openHr': snap(op, 'up'), 'closeHr': snap(cl, 'down')}
+                    if op is None or cl is None: continue
+                    key = day if day else '_default'
+                    spans = day_spans.setdefault(vid, {})
+                    if key in spans:
+                        prev_op, prev_cl = spans[key]
+                        spans[key] = (min(prev_op, op), max(prev_cl, cl))
+                    else:
+                        spans[key] = (op, cl)
+
+                for vid, spans in day_spans.items():
+                    by_day = {}
+                    best_day, best_dur = None, -1
+                    for day, (op, cl) in spans.items():
+                        sn_open, sn_close = snap(op, 'up'), snap(cl, 'down')
+                        by_day[day] = {'openHr': sn_open, 'closeHr': sn_close}
+                        dur = sn_close - sn_open
+                        if dur > best_dur:
+                            best_dur, best_day = dur, day
+                    entry = {'openHr': by_day[best_day]['openHr'], 'closeHr': by_day[best_day]['closeHr']}
+                    if best_day != '_default':
+                        entry['byDay'] = by_day
+                    timing[vid] = entry
                 print(f'    Sheet3 timing: {len(timing)} stores')
 
         return {'orders': orders_hourly, 'gmv': gmv_hourly, 'timing': timing}

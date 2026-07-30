@@ -1620,6 +1620,12 @@ function _getStoreTiming(vendorId){
   var rec=d[vid];
   return rec?{vendorId:vid,openHr:rec.openHr,closeHr:rec.closeHr,duration:rec.closeHr-rec.openHr}:null;
 }
+// Per-day-of-week store hours (Sheet3), where available — {Sunday:{openHr,closeHr},...} or null
+function _getStoreWeeklyTiming(vendorId){
+  var d=APP.storeTimingData; if(!d||Array.isArray(d))return null;
+  var rec=d[String(vendorId||'').trim()];
+  return rec&&rec.byDay?rec.byDay:null;
+}
 // Count weekdays (Mon-Fri) approximation from total working days
 function _weekdaysOnly(wDays){return Math.round(wDays*5/7);}
 // Trim low-order edge hours from store window; returns {open, close, trimmedStart, trimmedEnd}
@@ -1958,6 +1964,50 @@ function calcAllOptions(store){
   return{options:options,notViable:notViable,avgOPD:Math.round(avgOPD*10)/10};
 }
 
+var DOW_ORDER=['Sunday','Monday','Tuesday','Wednesday','Thursday','Friday','Saturday'];
+function renderWeeklySchedule(store){
+  var byDay=_getStoreWeeklyTiming(store.vendorId);
+  var hourly=_getStoreHourly(store.vendorId);
+  var cfg=APP.optimizerConfig||{};
+  var utrThr=cfg.otUTRThreshold||5;
+  if(!byDay){
+    return '<div style="padding:14px;text-align:center;color:var(--muted);font-size:12px;background:var(--card);border:1.5px dashed var(--border);border-radius:var(--radius)">'
+      +'<i class="fas fa-calendar-times" style="display:block;font-size:18px;margin-bottom:6px;opacity:0.4"></i>No per-day store timing available for this store.</div>';
+  }
+  var rates=APP.config.vendor_rates||[];
+  var dept=(store.dept3pl||'').split(',')[0].trim();
+  var vendorCfg=null;
+  for(var i=0;i<rates.length;i++){if(rates[i].vendorName===dept||rates[i].vendorName.toLowerCase()===dept.toLowerCase()){vendorCfg=rates[i];break;}}
+  var contractHrs=vendorCfg?(vendorCfg.hoursPerDay||10):10;
+
+  var h='<div style="overflow-x:auto"><table style="border-collapse:collapse;font-size:10px;white-space:nowrap">';
+  h+='<tr><th style="padding:4px 6px"></th>';
+  for(var hr=0;hr<24;hr++){h+='<th style="padding:3px 5px;background:var(--danger);color:#fff;font-weight:700;text-align:center">'+hr+'</th>';}
+  h+='</tr>';
+  DOW_ORDER.forEach(function(day){
+    var win=byDay[day];
+    h+='<tr><td style="padding:3px 8px;background:var(--danger);color:#fff;font-weight:700;text-align:left">'+day+'</td>';
+    for(var hr=0;hr<24;hr++){
+      var cell,bg,color='#fff';
+      if(!win||hr<Math.floor(win.openHr)||hr>=Math.ceil(win.closeHr)){
+        cell='';bg='#fff';color='#94a3b8';
+      }else if(hr>=win.openHr+contractHrs){
+        cell='OT';bg='#fde68a';color='#92400e';
+      }else{
+        var ord=hourly?(hourly[hr]||0):0;
+        var pickers=Math.max(1,Math.ceil(ord/utrThr));
+        cell=String(pickers);
+        bg=pickers>=2?'#fca5a5':'#86efac';color='#1f2937';
+      }
+      h+='<td style="padding:3px 5px;background:'+bg+';color:'+color+';text-align:center;border:1px solid #fff;font-weight:600">'+cell+'</td>';
+    }
+    h+='</tr>';
+  });
+  h+='</table></div>';
+  h+='<div style="font-size:10px;color:var(--muted);margin-top:8px">Pickers needed per hour, based on this store\'s typical hourly order curve applied to each day\'s actual operating hours (from store timing data) — day-to-day order volume differences aren\'t available in the source data yet, only day-to-day operating-hour differences are. "OT" = beyond this store\'s '+contractHrs+'-hr contract shift from opening.</div>';
+  return h;
+}
+
 function renderStoreOptions(result){
   var cur=_getCurrency();
   var opts=result.options,nv=result.notViable,h='';
@@ -2135,6 +2185,7 @@ function renderOptimizerView(){
   var selChain2=APP._optChain||'All Chains';
   var baseList=APP._optShowAll?all.slice().sort(function(a,b){return (b.pickerCPO||b.loadedCPO||0)-(a.pickerCPO||a.loadedCPO||0);}):flagged;
   var displayStores=selChain2==='All Chains'?baseList:baseList.filter(function(r){return r.chain===selChain2;});
+  APP._optDisplayStores=displayStores;
   if(!displayStores.length){h+='<div class="empty-state"><p>No stores above threshold. Lower the action threshold in Settings → Optimizer.</p></div></div>';document.getElementById('mainContent').innerHTML=h;return;}
 
   displayStores.forEach(function(store,idx){
@@ -2172,12 +2223,15 @@ function renderOptimizerView(){
     if(sPeak>0){h+='<div style="text-align:center"><div style="font-size:10px;color:var(--muted)">Peak</div><div style="font-size:12px;font-weight:600">'+_fmtH(sPeakH)+' = '+Math.round(sPeak*10)/10+'</div></div>';}
     var topOpt=optResult.options[0];
     if(topOpt&&topOpt.netFull>0)h+='<div style="text-align:center"><div style="font-size:10px;color:#059669">Best saving</div><div style="font-size:14px;font-weight:700;color:#059669">'+_getCurrency()+' '+fmt(topOpt.netFull)+'/mo</div></div>';
+    h+='<div style="text-align:center"><button class="btn btn-sm btn-outline" style="font-size:10px;padding:4px 8px" onclick="event.stopPropagation();toggleWeeklySchedule('+idx+')"><i class="fas fa-calendar-week" style="margin-right:4px"></i>Weekly Schedule</button></div>';
     h+='</div></div>';
 
     // Options (collapsible)
     h+='<div id="os'+idx+'" style="display:none;padding:14px 16px">';
     h+=renderStoreOptions(optResult);
-    h+='</div></div>'; // close store body, store card
+    h+='</div>';
+    h+='<div id="wk'+idx+'" style="display:none;padding:14px 16px;border-top:1px solid var(--border)"></div>';
+    h+='</div>'; // close store card
   });
 
   h+='</div>';
@@ -2191,6 +2245,19 @@ function toggleOptStore(id){
   var open=el.style.display==='none'||el.style.display==='';
   el.style.display=open?'block':'none';
   if(chev)chev.style.transform=open?'rotate(180deg)':'';
+}
+function toggleWeeklySchedule(idx){
+  var el=document.getElementById('wk'+idx); if(!el)return;
+  if(el.style.display==='none'||el.style.display===''){
+    if(!el.dataset.rendered){
+      var store=(APP._optDisplayStores||[])[idx];
+      if(store)el.innerHTML=renderWeeklySchedule(store);
+      el.dataset.rendered='1';
+    }
+    el.style.display='block';
+  }else{
+    el.style.display='none';
+  }
 }
 
 // ================================================================
