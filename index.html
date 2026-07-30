@@ -208,6 +208,8 @@ if(typeof google==='undefined'||!google.script||window.location.hostname.indexOf
             working_days:   cfg.working_days||[],
           },
           optimizerConfig: cfg.optimizer||{},
+          ramadanConfig: cfg.ramadan||{start:'',end:''},
+          holidays: cfg.holidays||[],
           user:     {email:userRec.email,role:userRec.role,name:userRec.name},
           timestamp:meta.timestamp,
           mtdSync:  {syncDate:meta.syncDate},
@@ -254,6 +256,9 @@ if(typeof google==='undefined'||!google.script||window.location.hostname.indexOf
     updateConfigEntry:function(section,id,fields){return _ghWriteConfig(function(cfg){var arr=(cfg[section]||[]).map(function(e){return e.id===id?Object.assign({},e,fields):e;});cfg[section]=arr;return arr;},'Update '+section);},
     deleteConfigEntry:function(section,id){return _ghWriteConfig(function(cfg){var arr=(cfg[section]||[]).filter(function(e){return e.id!==id;});cfg[section]=arr;return arr;},'Delete '+section);},
     saveOptimizerConfig:function(opt){return _ghWriteConfig(function(cfg){cfg.optimizer=opt;return opt;},'Update optimizer');},
+    saveRamadanConfig:function(ram){return _ghWriteConfig(function(cfg){cfg.ramadan=ram;return ram;},'Update Ramadan period');},
+    addHolidayEntry:function(entry){return _ghWriteConfig(function(cfg){var arr=cfg.holidays||[];entry.id=Date.now().toString();arr.push(entry);cfg.holidays=arr;return arr;},'Add holiday');},
+    deleteHolidayEntry:function(id){return _ghWriteConfig(function(cfg){var arr=(cfg.holidays||[]).filter(function(e){return e.id!==id;});cfg.holidays=arr;return arr;},'Delete holiday');},
     addUser:function(email,role,sup){return _ghWriteUsers(function(u){if(u.some(function(x){return x.email===email;}))return {_err:'User already exists'};u.push({email:email,role:role,name:'',supervisorName:sup||''});return {};})},
     revokeUser:function(email){return _ghWriteUsers(function(u){return u.map(function(x){return x.email===email?Object.assign({},x,{status:'revoked'}):x;});});},
     reinstateUser:function(email){return _ghWriteUsers(function(u){return u.map(function(x){return x.email===email?Object.assign({},x,{status:'active'}):x;});});},
@@ -1862,6 +1867,10 @@ function calcAllOptions(store){
   var effRem=weekdayOnly?_weekdaysOnly(si.remainingWorkDays):si.remainingWorkDays;
   function relFull(n){return Math.round(n*(effWDays/6)*dailyRate);}
   function relThis(n){return Math.round(n*(effRem/6)*dailyRate);}
+  // Phase 4 model: colleague covers alone on day-off → OT = max(0, storeHrs − contractHrs) × otMult × hrRate
+  // If trim brings storeHrs ≤ contractHrs → OT = 0 → zero coverage cost
+  function covOTFull(n,sH){if(sH==null)return relFull(n);var oth=Math.max(0,Math.round((sH-contractHrs)*2)/2);return Math.round(n*(effWDays/6)*oth*otMult*hrRate);}
+  function covOTThis(n,sH){if(sH==null)return relThis(n);var oth=Math.max(0,Math.round((sH-contractHrs)*2)/2);return Math.round(n*(effRem/6)*oth*otMult*hrRate);}
   var hourly=_getStoreHourly(store.vendorId);
   var gmv=_getStoreHourlyGMV(store.vendorId);
   var utrThr=cfg.otUTRThreshold||5;
@@ -1880,6 +1889,7 @@ function calcAllOptions(store){
   var peakOrders=0,peakHr=-1;
   if(hourly){for(var hx=0;hx<24;hx++){if((hourly[hx]||0)>peakOrders){peakOrders=hourly[hx];peakHr=hx;}}}
   var minPickers=peakOrders>0?Math.max(1,Math.ceil(peakOrders/utrThr)):1;
+  var singlePickerViable=peakHr>=0&&peakOrders<=utrThr; // Phase 2: can 1 picker handle peak?
   var canReduceHead=currentPickers>minPickers;
   var pickersReduced=Math.max(0,currentPickers-minPickers);
   var untrimHrs=snOpen!=null?(snClose-snOpen):null;
@@ -1907,18 +1917,23 @@ function calcAllOptions(store){
     var picLabel=minPickers===1?'1 picker':minPickers+' pickers';
     var pSavF=Math.round(pickersReduced*avgPickerCost);
     var pSavT=Math.round(pickersReduced*dailyRate*si.remainingWorkDays);
-    var rF=relFull(minPickers),rT=relThis(minPickers);
+    var hcSH=untrimHrs;
+    var rF=covOTFull(minPickers,hcSH),rT=covOTThis(minPickers,hcSH);
+    var hcCovOTHrs=hcSH!=null?Math.max(0,Math.round((hcSH-contractHrs)*2)/2):null;
+    var hcCovLabel=hcSH==null?'Day-off coverage (no timing — est. reliever)':hcCovOTHrs===0?'Day-off coverage OT: 0 hrs (store fits in contract)':'Day-off coverage OT ('+hcCovOTHrs+' hrs/off × '+Math.round(effWDays/6*10)/10+' days/mo)';
     var newPC=Math.max(0,(store.pickerCost||0)-Math.round(pickersReduced*avgPickerCost));
     var chs=chainCPOs(newPC);
     options.push({id:'headcount',label:'Reduce to '+picLabel+' — keep current hours',
       netFull:pSavF-rF,netThis:pSavT-rT,
-      breakdown:[{l:'Picker saving ('+pickersReduced+' removed)',v:pSavF,sign:1},{l:'Reliever cost for '+minPickers+' remaining',v:rF,sign:-1}],
+      breakdown:[{l:'Picker saving ('+pickersReduced+' removed)',v:pSavF,sign:1},{l:hcCovLabel,v:rF,sign:-1}],
       changes:{pickers:currentPickers+'→'+minPickers,hours:'unchanged',ot:otUntrim>0?otUntrim+' hrs (unchanged)':'—'},
       evidence:{peakHr:peakHr>=0?peakHr:null,peakOrders:peakHr>=0?Math.round(peakOrders*10)/10:null,
         noHourlyData:!hourly||peakHr<0,minPickers:minPickers,utrThr:utrThr,
+        singlePickerViable:singlePickerViable,
         snOpen:snOpen,snClose:snClose,contractHrs:contractHrs,
         storeHrs:snOpen!=null?_fmtHalf(snOpen)+' – '+_fmtHalf(snClose):null,
-        dayOffDays:Math.round((effWDays/6)*10)/10,dailyRateRnd:Math.round(dailyRate),
+        dayOffDays:Math.round((effWDays/6)*10)/10,covOTHrs:hcCovOTHrs,covOTCost:rF,
+        storeHrsForCov:hcSH!=null?Math.round(hcSH*10)/10:null,
         pickersAfter:minPickers,relFull:rF},
       newPickerCPO:store.orders>0?Math.round(newPC/store.orders*100)/100:null,
       oldChCPO:chs.old,newChCPO:chs.nw,notes:[]});
@@ -1950,10 +1965,13 @@ function calcAllOptions(store){
       var tPicLbl=minPickersTrim===1?'1 picker':minPickersTrim+' pickers';
       var tPicF=Math.round(pickersReducedTrim*avgPickerCost),tPicT=Math.round(pickersReducedTrim*dailyRate*si.remainingWorkDays);
       var tOTF=otCostFull(otUntrim-otTrim,minPickersTrim),tOTT=otCostThis(otUntrim-otTrim,minPickersTrim);
-      var tRF=relFull(minPickersTrim),tRT=relThis(minPickersTrim);
+      var trimSH=trimHrs!=null?trimHrs:contractHrs;
+      var tRF=covOTFull(minPickersTrim,trimSH),tRT=covOTThis(minPickersTrim,trimSH);
+      var tCovOTHrs=Math.max(0,Math.round((trimSH-contractHrs)*2)/2);
+      var tCovLabel=tCovOTHrs===0?'Day-off coverage OT: 0 hrs (trim fits in contract hrs)':'Day-off coverage OT ('+tCovOTHrs+' hrs/off × '+Math.round(effWDays/6*10)/10+' days/mo)';
       var tNewPC=Math.max(0,(store.pickerCost||0)-Math.round(pickersReducedTrim*avgPickerCost));
       var tChs=chainCPOs(tNewPC);
-      var bkd=[{l:'Picker saving ('+pickersReducedTrim+' removed)',v:tPicF,sign:1},{l:'OT eliminated by trim',v:tOTF,sign:1},{l:'Reliever cost for '+minPickersTrim+' remaining',v:tRF,sign:-1}];
+      var bkd=[{l:'Picker saving ('+pickersReducedTrim+' removed)',v:tPicF,sign:1},{l:'OT eliminated by trim',v:tOTF,sign:1},{l:tCovLabel,v:tRF,sign:-1}];
       options.push({id:'trim_headcount',label:'Trim low-volume hours + reduce to '+tPicLbl,
         netFull:(tPicF+tOTF)-tRF,netThis:(tPicT+tOTT)-tRT,
         breakdown:bkd,
@@ -1963,7 +1981,8 @@ function calcAllOptions(store){
           trimStartHrs:trimS.map(function(hh){return{hr:hh,orders:Math.round((hourly[hh]||0)*10)/10,gmv:gmv?Math.round(gmv[hh]||0):0};}),
           trimEndHrs:trimE.map(function(hh){return{hr:hh,orders:Math.round((hourly[hh]||0)*10)/10,gmv:gmv?Math.round(gmv[hh]||0):0};}),
           peakInTrim:Math.round(peakInTrim*10)/10,minPickersTrim:minPickersTrim,utrThr:utrThr,
-          dayOffDays:Math.round((effWDays/6)*10)/10,dailyRateRnd:Math.round(dailyRate),
+          dayOffDays:Math.round((effWDays/6)*10)/10,covOTHrs:tCovOTHrs,covOTCost:tRF,
+          storeHrsForCov:Math.round(trimSH*10)/10,
           pickersAfter:minPickersTrim,relFull:tRF,otElimHrs:otUntrim-otTrim,edgeThr:edgeThr,edgeGmv:edgeGmv},
         newPickerCPO:store.orders>0?Math.round(tNewPC/store.orders*100)/100:null,
         oldChCPO:tChs.old,newChCPO:tChs.nw,notes:[]});
@@ -2118,10 +2137,26 @@ function renderStoreOptions(result){
           h+='<div style="color:#374151;margin-bottom:5px"><i class="fas fa-ban" style="color:#0284c7;margin-right:5px;width:12px"></i>'
             +'OT eliminated by trim: <b>'+ev.otElimHrs+' hrs/day</b></div>';
         }
+        if(ev.singlePickerViable===true){
+          h+='<div style="color:#059669;margin-bottom:5px"><i class="fas fa-check-circle" style="margin-right:5px;width:12px"></i>'
+            +'<b>Phase 2 ✓</b> — peak ('+ev.peakOrders+' ord/hr) ≤ UTR '+ev.utrThr+' — single picker can handle peak</div>';
+        }else if(ev.singlePickerViable===false){
+          h+='<div style="color:#ea580c;margin-bottom:5px"><i class="fas fa-exclamation-circle" style="margin-right:5px;width:12px"></i>'
+            +'<b>Phase 2</b> — peak exceeds single-picker capacity → minimum '+ev.minPickers+' pickers required</div>';
+        }
         if(ev.dayOffDays!=null){
-          h+='<div style="color:#374151"><i class="fas fa-calendar-minus" style="color:#0284c7;margin-right:5px;width:12px"></i>'
-            +'Day-off coverage: '+ev.pickersAfter+' picker'+(ev.pickersAfter>1?'s':'')+' × <b>'+ev.dayOffDays+' offs/mo</b> × AED '+ev.dailyRateRnd+'/day'
-            +' = <b>AED '+fmt(ev.relFull)+'/mo</b> <span style="color:#6b7280">(weekday offs only)</span></div>';
+          var covLine;
+          if(ev.covOTHrs===0){
+            covLine='<span style="color:#059669;font-weight:700">Day-off coverage OT: 0 hrs</span>'
+              +' — colleague covers within contract hrs (store '+ev.storeHrsForCov+' hrs ≤ contract '+ev.contractHrs+' hrs) — <b>AED 0 extra</b>';
+          }else if(ev.covOTHrs>0){
+            covLine='Day-off coverage: colleague covers alone → <b>'+ev.covOTHrs+' OT hrs/off</b>'
+              +' × '+ev.pickersAfter+' picker'+(ev.pickersAfter>1?'s':'')
+              +' × '+ev.dayOffDays+' offs/mo = <b>AED '+fmt(ev.covOTCost||0)+'/mo</b>';
+          }else{
+            covLine='Day-off coverage (est.): '+ev.pickersAfter+' picker'+(ev.pickersAfter>1?'s':'')+' × '+ev.dayOffDays+' offs/mo = <b>AED '+fmt(ev.relFull||0)+'/mo</b>';
+          }
+          h+='<div style="color:#374151"><i class="fas fa-calendar-minus" style="color:#0284c7;margin-right:5px;width:12px"></i>'+covLine+'</div>';
         }
         var schedOpen=ev.adjOpen!=null?ev.adjOpen:ev.snOpen;
         var schedClose=ev.adjClose!=null?ev.adjClose:ev.snClose;
@@ -2644,8 +2679,10 @@ function renderFetchAllTab(){
 
   // Persistent history log
   h+='<div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:8px">';
-  h+='<div style="font-size:12px;font-weight:700;color:var(--muted);text-transform:uppercase;letter-spacing:.5px"><i class="fas fa-history" style="margin-right:5px"></i>Fetch History</div>';
-  h+='<button class="btn btn-sm btn-outline" style="font-size:11px;color:var(--danger)" onclick="confirmClearLog()"><i class="fas fa-trash" style="margin-right:4px"></i>Clear Log</button>';
+  h+='<div style="font-size:12px;font-weight:700;color:var(--muted);text-transform:uppercase;letter-spacing:.5px"><i class="fas fa-history" style="margin-right:5px"></i>'+(window._staticMode?'GitHub Actions Run History':'Fetch History')+'</div>';
+  h+=window._staticMode
+    ?'<button class="btn btn-sm btn-outline" style="font-size:11px" onclick="exportActionsCSV()"><i class="fas fa-download" style="margin-right:4px"></i>Download CSV</button>'
+    :'<button class="btn btn-sm btn-outline" style="font-size:11px;color:var(--danger)" onclick="confirmClearLog()"><i class="fas fa-trash" style="margin-right:4px"></i>Clear Log</button>';
   h+='</div>';
   h+='<div id="fetchHistorySection"><div style="padding:16px;text-align:center;color:var(--muted);font-size:12px"><i class="fas fa-spinner fa-spin" style="margin-right:6px"></i>Loading history...</div></div>';
 
@@ -2670,7 +2707,7 @@ function renderFetchAllTab(){
         '<i class="fas fa-check-circle" style="font-size:20px;flex-shrink:0"></i>'+
         '<div style="flex:1"><strong>Data up to date</strong>'+(s.timestamp?' — Last run: '+formatTS(s.timestamp):'')+'</div>'+
         btns+'</div>';
-      renderFetchHistory(s.log||[]);
+      if(window._staticMode){loadActionsHistory();}else{renderFetchHistory(s.log||[]);}
     }
     if(window._staticMode){
       fetch('data/meta.json?t='+Date.now()).then(function(r){return r.ok?r.json():{};})
@@ -2696,7 +2733,7 @@ function renderFetchAllTab(){
       }
     }
     if(window._staticMode){
-      _showAutoSchedule({hours:[6,12],activeTriggers:2});
+      setTimeout(function(){_showAutoSchedule({hours:[6,12],activeTriggers:2});},0);
     } else {
       google.script.run.withSuccessHandler(_showAutoSchedule).getAutoFetchConfig();
     }
@@ -2867,6 +2904,64 @@ function renderFetchHistory(log){
   el.innerHTML=h;
 }
 
+var _lastActionsRuns=[];
+function loadActionsHistory(){
+  var el=document.getElementById('fetchHistorySection'); if(!el)return;
+  var tok=_ghTok();
+  var headers=tok?{'Authorization':'token '+tok,'Accept':'application/vnd.github.v3+json'}:{'Accept':'application/vnd.github.v3+json'};
+  fetch('https://api.github.com/repos/Snoop214/CPO-Check/actions/workflows/compute.yml/runs?per_page=10',{headers:headers})
+    .then(function(r){if(!r.ok)throw new Error(r.status===401||r.status===404?'Add a GitHub token in Settings → GitHub Token to view run history':'GitHub API error '+r.status);return r.json();})
+    .then(function(d){_lastActionsRuns=d.workflow_runs||[];renderActionsHistory(_lastActionsRuns);})
+    .catch(function(e){
+      el.innerHTML='<div style="padding:16px;text-align:center;color:var(--muted);font-size:12px;background:var(--card);border:1.5px dashed var(--border);border-radius:var(--radius)"><i class="fas fa-history" style="display:block;font-size:20px;margin-bottom:6px;opacity:0.3"></i>'+e.message+'</div>';
+    });
+}
+function renderActionsHistory(runs){
+  var el=document.getElementById('fetchHistorySection'); if(!el)return;
+  if(!runs||!runs.length){
+    el.innerHTML='<div style="padding:20px;text-align:center;color:var(--muted);font-size:12px;background:var(--card);border:1.5px dashed var(--border);border-radius:var(--radius)"><i class="fas fa-history" style="display:block;font-size:20px;margin-bottom:6px;opacity:0.3"></i>No workflow runs found</div>';
+    return;
+  }
+  var h='<div style="border:1.5px solid var(--border);border-radius:var(--radius);overflow:hidden">';
+  h+='<table style="width:100%;border-collapse:collapse">';
+  h+='<thead><tr style="background:var(--cream)">';
+  h+='<th style="padding:8px 14px;font-size:10px;font-weight:700;color:var(--muted);text-transform:uppercase;letter-spacing:.5px;text-align:left;border-bottom:1px solid var(--border)">Run</th>';
+  h+='<th style="padding:8px 14px;font-size:10px;font-weight:700;color:var(--muted);text-transform:uppercase;letter-spacing:.5px;text-align:left;border-bottom:1px solid var(--border)">Started</th>';
+  h+='<th style="padding:8px 14px;font-size:10px;font-weight:700;color:var(--muted);text-transform:uppercase;letter-spacing:.5px;text-align:left;border-bottom:1px solid var(--border)">Trigger</th>';
+  h+='<th style="padding:8px 14px;font-size:10px;font-weight:700;color:var(--muted);text-transform:uppercase;letter-spacing:.5px;text-align:center;border-bottom:1px solid var(--border)">Status</th>';
+  h+='<th style="padding:8px 14px;font-size:10px;font-weight:700;color:var(--muted);text-transform:uppercase;letter-spacing:.5px;text-align:left;border-bottom:1px solid var(--border)">Link</th>';
+  h+='</tr></thead><tbody>';
+  runs.forEach(function(r){
+    var conclusion=r.conclusion||r.status;
+    var statusHtml=conclusion==='success'
+      ?'<span style="background:#dcfce7;color:#166534;padding:2px 10px;border-radius:20px;font-size:11px;font-weight:600">success</span>'
+      :conclusion==='in_progress'||conclusion==='queued'
+      ?'<span style="background:#dbeafe;color:#1e40af;padding:2px 10px;border-radius:20px;font-size:11px;font-weight:600"><i class="fas fa-spinner fa-spin" style="margin-right:3px"></i>'+conclusion+'</span>'
+      :'<span style="background:#fee2e2;color:#991b1b;padding:2px 10px;border-radius:20px;font-size:11px;font-weight:600">'+conclusion+'</span>';
+    h+='<tr style="border-bottom:1px solid var(--border)">';
+    h+='<td style="padding:8px 14px;font-size:11px;font-family:monospace;color:var(--blue)">#'+r.run_number+'</td>';
+    h+='<td style="padding:8px 14px;font-size:11px;color:var(--muted);white-space:nowrap">'+formatTS(r.run_started_at||r.created_at)+'</td>';
+    h+='<td style="padding:8px 14px;font-size:11px;color:var(--dark)">'+(r.event||'—')+'</td>';
+    h+='<td style="padding:8px 14px;text-align:center">'+statusHtml+'</td>';
+    h+='<td style="padding:8px 14px"><a href="'+r.html_url+'" target="_blank" rel="noopener" style="font-size:11px;color:var(--primary)">View on GitHub <i class="fas fa-external-link-alt" style="font-size:9px"></i></a></td>';
+    h+='</tr>';
+  });
+  h+='</tbody></table>';
+  h+='<div style="padding:8px 14px;background:var(--cream);font-size:10px;color:var(--muted)">Showing last '+runs.length+' scheduled Actions runs</div>';
+  h+='</div>';
+  el.innerHTML=h;
+}
+function exportActionsCSV(){
+  if(!_lastActionsRuns.length){showToast('No run history loaded yet','error');return;}
+  var rows=[['Run','Started','Trigger','Status','URL']];
+  _lastActionsRuns.forEach(function(r){rows.push(['#'+r.run_number,r.run_started_at||r.created_at,r.event||'',r.conclusion||r.status,r.html_url]);});
+  var csv=rows.map(function(row){return row.map(function(c){return '"'+String(c).replace(/"/g,'""')+'"';}).join(',');}).join('\n');
+  var blob=new Blob([csv],{type:'text/csv'});
+  var a=document.createElement('a');
+  a.href=URL.createObjectURL(blob);
+  a.download='cpo_actions_history.csv';
+  a.click();
+}
 function confirmClearLog(){
   if(!confirm('Clear all fetch history? This cannot be undone.'))return;
   google.script.run.withSuccessHandler(function(){
@@ -3080,7 +3175,7 @@ function renderWorkdaysTab(){
   });
 
   // --- Public Holidays (standalone) ---
-  var allHolidays=APP.holidays||[];
+  var allHolidays=Array.isArray(APP.holidays)?APP.holidays:[];
   h+='<div class="s-title" style="margin-top:16px"><i class="fas fa-star" style="color:#d97706;margin-right:7px"></i>Public Holidays</div>';
   h+='<p style="font-size:12px;color:var(--muted);margin-bottom:12px">Pickers who work on a holiday get OT pay (daily rate × OT multiplier − regular pay). Select country to pre-fill common holiday names, then confirm the government-announced date.</p>';
 
@@ -3257,9 +3352,22 @@ function revokeUserAction(email){showConfirm('Revoke access for '+email+'?',func
 function reinstateUserAction(email){google.script.run.withSuccessHandler(function(){showToast('Reinstated','success');loadUsersTable();}).reinstateUser(email);}
 function removeUserAction(email){showConfirm('Permanently delete '+email+'?',function(){google.script.run.withSuccessHandler(function(){showToast('Removed','success');loadUsersTable();}).removeUser(email);});}
 
+function _storageWorks(){
+  try{localStorage.setItem('__cpo_test','1');var ok=localStorage.getItem('__cpo_test')==='1';localStorage.removeItem('__cpo_test');return ok;}catch(e){return false;}
+}
+function _safeGetItem(key){try{return localStorage.getItem(key);}catch(e){return null;}}
+function _inIframe(){try{return window.self!==window.top;}catch(e){return true;}}
 function renderGhTokenTab(){
-  var stored=localStorage.getItem('cpo_gh_token')||'';
+  var stored=_safeGetItem('cpo_gh_token')||'';
   var h='<div class="s-title"><i class="fas fa-key" style="color:var(--primary);margin-right:7px"></i>GitHub Token</div>';
+  if(_inIframe()||!_storageWorks()){
+    h+='<div style="background:#fee2e2;border:1.5px solid #fca5a5;border-radius:var(--radius);padding:12px 16px;font-size:12px;color:#991b1b;margin-bottom:16px">'
+      +'<i class="fas fa-triangle-exclamation" style="margin-right:6px"></i>'
+      +'This app appears to be embedded (e.g. inside the talabat portal). Browser privacy settings often block saved tokens from persisting inside embedded frames, so a saved token can disappear later. '
+      +'For reliable token storage, open the app directly instead of through the portal wrapper.'
+      +'<div style="margin-top:8px"><button class="btn btn-sm btn-primary" onclick="window.open(\'https://snoop214.github.io/CPO-Check/\',\'_blank\')"><i class="fas fa-external-link-alt" style="margin-right:5px"></i>Open in new tab</button></div>'
+      +'</div>';
+  }
   h+='<div style="background:#fef3c7;border:1.5px solid #fcd34d;border-radius:var(--radius);padding:12px 16px;font-size:12px;color:#92400e;margin-bottom:16px">'
     +'<i class="fas fa-info-circle" style="margin-right:6px"></i>'
     +'This token is stored <strong>only in your browser</strong> (localStorage). It is never committed to the repo or shared with anyone.'
@@ -3277,7 +3385,16 @@ function renderGhTokenTab(){
 function saveGhToken(){
   var t=(document.getElementById('ghTokenInput').value||'').trim();
   if(!t){showToast('Paste your token first','error');return;}
-  localStorage.setItem('cpo_gh_token',t);
+  try{
+    localStorage.setItem('cpo_gh_token',t);
+    if(localStorage.getItem('cpo_gh_token')!==t){
+      showToast('Token did not persist — this browser/frame blocks storage. Open the app in a new tab (see banner above).','error');
+      return;
+    }
+  }catch(e){
+    showToast('Could not save token — storage is blocked in this frame. Open the app in a new tab (see banner above).','error');
+    return;
+  }
   showToast('Token saved — you can now edit all settings','success');
   renderSettingsTab('ghtoken');
 }

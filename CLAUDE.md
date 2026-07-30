@@ -1,5 +1,5 @@
 # CPO (Cost Per Order) — talabat LS
-# Last Updated: 21 July 2026
+# Last Updated: 30 July 2026
 
 ## What This App Does
 Store-level Cost Per Order (CPO) + Picker Utilization Rate (UTR) tracking.
@@ -18,16 +18,28 @@ Also includes a Cost Optimizer tab that evaluates cost-reduction options per sto
 - **Config/Users**: PropertiesService — vendor rates, employee costs, working days, users
 - **Limit**: PropertiesService 500KB hard cap — `cpo_precomp_done` and `cpo_fetch_log` moved to Drive
 
-### Option B — GitHub Pages + GitHub Actions — MIGRATION TARGET
-- **Compute**: `scripts/compute.py` — Python script, runs on GitHub Actions schedule (2×/day)
+### Option B — GitHub Pages + GitHub Actions — **LIVE** ✅
+- **Live URL**: https://snoop214.github.io/CPO-Check/
+- **Repo**: `Snoop214/CPO-Check` (GitHub)
+- **Compute**: `scripts/compute.py` — Python script, runs on GitHub Actions schedule (2×/day: 06:00 + 12:00 UTC = 10:00 + 16:00 GST)
 - **Hosting**: GitHub Pages — serves `index.html` (= Dashboard.html + static shim)
 - **Data**: `data/*.json` — committed to repo by Actions after each compute run
 - **Config**: `config/app_config.json` (vendor rates, costs, optimizer), `config/users.json`
 - **Auth**: `config/users.json` — email → role lookup; login prompt in browser
 - **No server**: the `google.script.run` shim in `index.html` intercepts all GAS calls → `fetch('data/...')`
 - **Secrets**: GitHub Secret `GOOGLE_CREDENTIALS_JSON` — service account JSON for Sheets API
+- **Service account**: `cpo-dashboard@sales-details-2025.iam.gserviceaccount.com`
 
 **Static shim design**: When `google` is undefined (GitHub Pages), a JS Proxy intercepts every `google.script.run.METHOD()` call. Reads map to `fetch('data/METHOD.json')`; writes (Refresh, Settings edits) return a static "not supported" response. The dashboard UI is identical — only the data layer changes.
+
+`window._staticMode = true` is set when on GitHub Pages or `file://` protocol.
+
+**GitHub API write (admin only)**:
+- Admin can edit vendor rates, employee costs, working days, optimizer config, and user list directly from the app
+- Uses GitHub Contents API: GET file (to get SHA) → PUT with base64 content + SHA
+- PAT stored in browser `localStorage('cpo_gh_token')` — accessed via Settings → GitHub Token tab
+- PAT scope needed: `repo` (classic PAT)
+- **SECURITY RULE: NEVER hardcode the PAT or commit it anywhere. It must ONLY live in the browser's localStorage, entered via Settings → GitHub Token. Do not write an actual token value into this file or any other file in the repo.**
 
 ---
 
@@ -170,47 +182,79 @@ Evaluates cost-reduction options per store based on current MTD data. Shows ALL 
 - `renderStoreOptions(result)` — renders ranked option cards per store
 - `renderOptimizerView()` — main view; iterates all flagged/all stores
 
+### Optimizer Logic Overview
+
+**Demand baseline**
+- Uses current MTD hourly averages (`APP.hourlyOrders`, `APP.hourlyGMV`) as the demand baseline
+- Store timing snapped from Sheet3: open → UP to nearest :00/:30, close → DOWN to nearest :00/:30
+
+**Single-picker viability check**
+- `singlePickerViable = peakOrders ≤ utrThreshold` — can 1 picker handle the busiest hour?
+- Peak scan covers ALL 24 hours (not restricted to store hours); `peakHr` initialized to -1 so midnight with 0 orders never wins
+- If false: `minPickers = ceil(peak/utrThr)` sets the floor
+- Shown in evidence panel as ✓ or warning badge
+
+**Edge trimming (low-volume hours)**
+- Remove hours where BOTH avg orders < `edgeOrderThreshold` AND avg GMV < `edgeGMVThreshold`
+- Trim from both ends of the operating window only
+- Result: smaller `trimHrs` = reduced OT and reduced day-off coverage cost
+- If `trimHrs ≤ contractHrs`: day-off coverage OT = 0
+
+**Day-off coverage model — NO external reliever**
+- When a picker has a day off, a colleague covers the store alone
+- The colleague works the full store operating window; hours beyond their contract = OT
+- This replaces the old "flat reliever daily rate" model entirely
+- If trim brings storeHrs ≤ contractHrs → zero OT → zero coverage cost = pure picker saving
+
 ### Options evaluated (ranked by net saving, highest first)
 
-**1. Headcount reduction**
-- `minPickers = ceil(peakHourlyOrders / utrThreshold)` — NOT always 1
-- If `minPickers >= currentPickers` → not viable (with specific peak/threshold numbers)
-- Saving = `pickersReduced × avgPickerCost`
-- Reliever cost = `minPickers × (weekdayWorkDays/6) × dailyRate` (day-offs are weekday-only)
-- Net = saving − reliever cost
+**1. Headcount reduction (no trim)**
+- `minPickers = ceil(peak / utrThr)`
+- If `minPickers >= currentPickers` → not viable
+- Net = pickerSaving − covOTFull(minPickers, untrimHrs)
 
 **2. Trim low-volume edges + headcount reduction**
-- Only shown if trimming actually eliminates OT on top of headcount saving (otherwise duplicate of option 1 — suppressed)
-- Edge hours trimmed: hours where avg orders < `edgeOrderThreshold` AND GMV < `edgeGMVThreshold`
-- Snap to :00/:30: open snaps UP, close snaps DOWN
-- After trim, recalculate `minPickersTrim = ceil(peakInTrimmedWindow / utrThreshold)`
-- OT eliminated = hours beyond `contractHrs + 1` in trimmed window
+- Only shown if trimming eliminates extra OT beyond headcount-only option
+- Suppressed if `canReduceAfterTrim && !trimAddsOT` (same saving as option 1)
+- Net = pickerSaving + OTeliminated − covOTFull(minPickersTrim, trimHrs)
+- trimHrs is smaller → covOT is smaller or zero → bigger net saving
 
 **3. Trim low-volume edges — reduce OT only (keep headcount)**
-- When trimming eliminates OT but headcount can't be reduced
-- Only viable if trim actually removes OT hours
+- When trimming eliminates OT but headcount is already at minimum
+- Net = OT eliminated by trim
 
 **4. Store closure**
-- Requires same-chain store within `proximityRadiusKm` (configurable, default 5 km)
-- Uses `haversineKm()` for distance, `getNearestSameChain()` for lookup
-- `getNearestSameChain` returns `{storeName, vendorId, km, minDrive}`
-- `calcClosureScenario` also finds nearest store regardless of radius (for not-viable reason)
-- **Nearby store extra cost**: looks up nearby store in `APP.allData`, calculates new load (`nearbyOPD + closedOPD`), computes extra pickers needed (`ceil(newLoad / (utrThr × contractHrs))`), adds extra cost to breakdown
+- Requires same-chain store within `proximityRadiusKm`
 - Net saving = this store cost saved − extra manpower at nearby store
 
+### Day-off coverage OT formula (key — never revert to flat reliever)
+```
+covOTFull(n, storeHrs):
+  otHrs = max(0, storeHrs − contractHrs)   // excess beyond contract
+  return n × (effWDays/6) × otHrs × otMultiplier × hrRate
+
+covOTThis(n, storeHrs):  // for remaining-month projection
+  return n × (effRem/6) × otHrs × otMultiplier × hrRate
+```
+- `n` = remaining pickers after reduction
+- `effWDays` = weekday work days (if `weekdayDayOffOnly=1`) or all work days
+- `hrRate = monthRate / (wDays × contractHrs)`
+- Fallback: if no timing data (`storeHrs = null`), falls back to `relFull(n)` (flat reliever estimate)
+
 ### Not-viable display
-Every option that can't be applied is shown in a "Not applicable" section with a specific reason including actual numbers — e.g.:
+Every option shows specific reason with actual numbers:
 - "Peak hour 7pm has 8 orders — minimum 2 pickers needed at UTR threshold 5, already at 2"
 - "No same-chain store within 5 km (nearest: Union Coop Al Twar, 7.2 km away)"
 - "All hours are above the 1 order/hr threshold — no edges to trim"
 
 ### Key design decisions
-- Reliever cost always shown as separate line (not bundled into picker cost)
+- **No external reliever model** — day-off coverage = colleague OT, NOT flat daily rate
 - Picker day-offs are weekday-only (Mon–Fri) — `_weekdaysOnly(wDays)` helper
 - UTR threshold is binary per hour — any single hour > threshold means that many pickers must be present
 - No pre-named option frames — label describes what the combination achieves
 - Chain CPO impact shown for headcount and closure options
 - Trim+headcount option suppressed when it produces same saving as headcount-only
+- Peak scan covers ALL 24 hours (not restricted to store hours) — `peakHr` init = -1 to avoid 0-order midnight as fake peak
 
 ### Optimizer config (stored in PropertiesService `cpo_config_optimizer`)
 - `actionThreshold` — CPO above this = flagged (default 4.0)
@@ -361,6 +405,29 @@ Alternatively: set up auto-fetch in Settings → Fetch All Data → Auto-schedul
 - Drive: 15GB free — no meaningful limit for this app
 - `getDailyTrendData()` still computes all MTD dates in one call — may timeout if MTD has many dates. Consider deprecating or batching.
 - Hourly data loaded into `APP.hourlyOrders` / `APP.hourlyGMV` / `APP.storeTiming` on startup — if not available, optimizer shows "No hourly data" for affected options
+
+---
+
+## Critical Bugs Fixed — Do Not Re-Introduce
+
+### Static Shim (index.html)
+- **Proxy handler must return `_proxy`**: `withSuccessHandler` and `withFailureHandler` MUST return `_proxy` (not `runner`). If they return `runner`, the next chained call fails with "not a function".
+- **Admin role check must be lowercase**: `(APP.user.role||'').toLowerCase()==='admin'` — users.json has `"Admin"` with capital A; all role checks must use `.toLowerCase()`
+- **Critical data loading bypasses Proxy**: `loadUsersTable()` and `getPrecomputeStatus()` in static mode use direct `fetch()` — NOT `google.script.run`. The Proxy silently swallows errors and the spinner never resolves.
+- **Fetch All tab in static mode**: Shows a static "not available" message using direct `fetch('data/meta.json')` — never calls `google.script.run.getPrecomputeStatus()` in static mode
+- **Static mode detection**: `typeof google==='undefined' || window.location.hostname.indexOf('github.io')>=0 || window.location.protocol==='file:'`
+
+### GitHub Actions Workflow
+- `git pull --rebase origin main` MUST run before `git push` — Actions commits can conflict if two runs overlap
+
+### Optimizer Logic
+- **Peak scan = full 24 hours** — do NOT restrict to store open/close hours. Peak = busiest hour all day.
+- **Peak init = -1** — `peakHr` must start at -1, `peakOrders` at 0. If initialized to 0 (midnight index), a store with all-zero hourly data reports midnight as peak.
+- **No flat reliever** — day-off coverage = `covOTFull(n, storeHrs)`. Do not revert to `relFull = n × (days/6) × dailyRate`
+- **Config fields drive logic** — `lowOrderPerDay` and `closureOrdersPerWeek` from optimizer config must actually be used in calculations/notes, not just stored
+
+### Sheet Tab Names (compute.py)
+- Orders sheet tabs are lowercase 'o': `Weekly order`, `Monthly order` (NOT `Weekly Order`)
 
 ---
 

@@ -1,18 +1,84 @@
 {
   "vendor_rates": [
     {
-      "vendorName": "Bosta",
+      "id": "vr_krh",
+      "vendorName": "KRH",
       "baseRate": 2750,
       "hoursPerDay": 10,
       "effectiveStartMonth": 1,
-      "effectiveStartYear": 2024
+      "effectiveStartYear": 2025,
+      "effectiveEndMonth": null,
+      "effectiveEndYear": null
     },
     {
-      "vendorName": "iMile",
+      "id": "vr_transguard",
+      "vendorName": "Transguard",
+      "baseRate": 2574,
+      "hoursPerDay": 10,
+      "effectiveStartMonth": 1,
+      "effectiveStartYear": 2025,
+      "effectiveEndMonth": null,
+      "effectiveEndYear": null
+    },
+    {
+      "id": "vr_wesource",
+      "vendorName": "WeSource",
+      "baseRate": 2780,
+      "hoursPerDay": 10,
+      "effectiveStartMonth": 1,
+      "effectiveStartYear": 2025,
+      "effectiveEndMonth": null,
+      "effectiveEndYear": null
+    },
+    {
+      "id": "vr_zone",
+      "vendorName": "Zone",
+      "baseRate": 2780,
+      "hoursPerDay": 10,
+      "effectiveStartMonth": 1,
+      "effectiveStartYear": 2025,
+      "effectiveEndMonth": null,
+      "effectiveEndYear": null
+    },
+    {
+      "id": "vr_trumax",
+      "vendorName": "Trumax",
+      "baseRate": 2780,
+      "hoursPerDay": 10,
+      "effectiveStartMonth": 1,
+      "effectiveStartYear": 2025,
+      "effectiveEndMonth": null,
+      "effectiveEndYear": null
+    },
+    {
+      "id": "vr_sanket",
+      "vendorName": "Sanket",
       "baseRate": 2750,
       "hoursPerDay": 10,
       "effectiveStartMonth": 1,
-      "effectiveStartYear": 2024
+      "effectiveStartYear": 2025,
+      "effectiveEndMonth": null,
+      "effectiveEndYear": null
+    },
+    {
+      "id": "vr_mtm",
+      "vendorName": "MTM",
+      "baseRate": 2780,
+      "hoursPerDay": 10,
+      "effectiveStartMonth": 1,
+      "effectiveStartYear": 2025,
+      "effectiveEndMonth": null,
+      "effectiveEndYear": null
+    },
+    {
+      "id": "vr_jumbo",
+      "vendorName": "Jumbo",
+      "baseRate": 2780,
+      "hoursPerDay": 10,
+      "effectiveStartMonth": 1,
+      "effectiveStartYear": 2025,
+      "effectiveEndMonth": null,
+      "effectiveEndYear": null
     }
   ],
   "employee_costs": [
@@ -30,6 +96,8 @@
     }
   ],
   "working_days": [],
+  "holidays": [],
+  "ramadan": { "start": "", "end": "" },
   "optimizer": {
     "currency": "AED",
     "actionThreshold": 4,
