@@ -1515,15 +1515,17 @@ function _getDaysElapsed(store){
 function _getCurrency(){return(APP.optimizerConfig||{}).currency||'AED';}
 // Hourly GMV helper
 function _getStoreHourlyGMV(vendorId){
-  var d=APP.hourlyGMVData||[],vid=String(vendorId||'').trim();
-  for(var i=0;i<d.length;i++){if(d[i].vendorId===vid)return d[i].gmv;}
-  return null;
+  var d=APP.hourlyGMVData; if(!d)return null;
+  var vid=String(vendorId||'').trim();
+  if(Array.isArray(d)){for(var i=0;i<d.length;i++){if(d[i].vendorId===vid)return d[i].gmv;}return null;}
+  return d[vid]||null;
 }
 // Hourly order helpers
 function _getStoreHourly(vendorId){
-  var d=APP.hourlyData||[],vid=String(vendorId||'').trim();
-  for(var i=0;i<d.length;i++){if(d[i].vendorId===vid)return d[i].hourly;}
-  return null;
+  var d=APP.hourlyData; if(!d)return null;
+  var vid=String(vendorId||'').trim();
+  if(Array.isArray(d)){for(var i=0;i<d.length;i++){if(d[i].vendorId===vid)return d[i].hourly;}return null;}
+  return d[vid]||null;
 }
 function _sumH(h,from,to){var s=0;for(var i=from;i<to&&i<24;i++)s+=(h[i]||0);return s;}
 function _fmtH(h){if(h===0||h===24)return'12am';if(h===12)return'12pm';return h<12?h+'am':(h-12)+'pm';}
@@ -1606,12 +1608,17 @@ function _snapHalf(h,dir){
   }
 }
 function _getStoreTiming(vendorId){
-  var d=APP.storeTimingData||[],vid=String(vendorId||'').trim();
-  var best=null;
-  for(var i=0;i<d.length;i++){
-    if(d[i].vendorId===vid){if(!best||d[i].duration>best.duration)best=d[i];}
+  var d=APP.storeTimingData; if(!d)return null;
+  var vid=String(vendorId||'').trim();
+  if(Array.isArray(d)){
+    var best=null;
+    for(var i=0;i<d.length;i++){
+      if(d[i].vendorId===vid){if(!best||d[i].duration>best.duration)best=d[i];}
+    }
+    return best; // {vendorId, openHr, closeHr, duration}
   }
-  return best; // {vendorId, openHr, closeHr, duration}
+  var rec=d[vid];
+  return rec?{vendorId:vid,openHr:rec.openHr,closeHr:rec.closeHr,duration:rec.closeHr-rec.openHr}:null;
 }
 // Count weekdays (Mon-Fri) approximation from total working days
 function _weekdaysOnly(wDays){return Math.round(wDays*5/7);}
