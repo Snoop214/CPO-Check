@@ -1957,6 +1957,9 @@ function calcAllOptions(store){
     if(trimE.length)trimParts.push('close '+_fmtHalf(snClose)+' → '+_fmtHalf(adjClose));
     var hoursChange=(untrimHrs!=null?Math.round(untrimHrs*10)/10:'?')+'→'+(trimHrs!=null?Math.round(trimHrs*10)/10:'?')+' hrs'+(trimParts.length?' ('+trimParts.join(', ')+')':'');
     var trimAddsOT=hasTrim&&(otUntrim-otTrim)>0;
+    var lostHrs=trimS.concat(trimE);
+    var ordersLostDay=Math.round(lostHrs.reduce(function(s,h){return s+(hourly[h]||0);},0)*10)/10;
+    var gmvLostDay=Math.round(lostHrs.reduce(function(s,h){return s+(gmv?gmv[h]||0:0);},0));
     if(!hasTrim&&otUntrim===0){
       notViable.push({label:'Trim store hours',reason:'No low-volume edge hours to remove and no OT to eliminate'});
     }else if(!hasTrim){
@@ -1983,7 +1986,8 @@ function calcAllOptions(store){
           peakInTrim:Math.round(peakInTrim*10)/10,minPickersTrim:minPickersTrim,utrThr:utrThr,
           dayOffDays:Math.round((effWDays/6)*10)/10,covOTHrs:tCovOTHrs,covOTCost:tRF,
           storeHrsForCov:Math.round(trimSH*10)/10,
-          pickersAfter:minPickersTrim,relFull:tRF,otElimHrs:otUntrim-otTrim,edgeThr:edgeThr,edgeGmv:edgeGmv},
+          pickersAfter:minPickersTrim,relFull:tRF,otElimHrs:otUntrim-otTrim,edgeThr:edgeThr,edgeGmv:edgeGmv,
+          ordersLostDay:ordersLostDay,gmvLostDay:gmvLostDay},
         newPickerCPO:store.orders>0?Math.round(tNewPC/store.orders*100)/100:null,
         oldChCPO:tChs.old,newChCPO:tChs.nw,notes:[]});
     }else if(canReduceAfterTrim&&!trimAddsOT){
@@ -1998,7 +2002,8 @@ function calcAllOptions(store){
           snOpen:snOpen,snClose:snClose,adjOpen:adjOpen,adjClose:adjClose,contractHrs:contractHrs,
           trimStartHrs:trimS.map(function(hh){return{hr:hh,orders:Math.round((hourly[hh]||0)*10)/10,gmv:gmv?Math.round(gmv[hh]||0):0};}),
           trimEndHrs:trimE.map(function(hh){return{hr:hh,orders:Math.round((hourly[hh]||0)*10)/10,gmv:gmv?Math.round(gmv[hh]||0):0};}),
-          peakInTrim:Math.round(peakInTrim*10)/10,otElimHrs:otUntrim-otTrim,edgeThr:edgeThr,edgeGmv:edgeGmv},
+          peakInTrim:Math.round(peakInTrim*10)/10,otElimHrs:otUntrim-otTrim,edgeThr:edgeThr,edgeGmv:edgeGmv,
+          ordersLostDay:ordersLostDay,gmvLostDay:gmvLostDay},
         newPickerCPO:null,oldChCPO:null,newChCPO:null,
         notes:['Headcount at minimum — peak inside active window: '+peakInTrim+' orders/hr needs '+minPickersTrim+' pickers (threshold: '+utrThr+')']});
     }else{
@@ -2097,6 +2102,12 @@ function renderStoreOptions(result){
       if(opt.ordersLost){h+='<span style="color:var(--muted)">Orders lost</span><span style="color:#dc2626;font-weight:600">'+fmt(opt.ordersLost)+'/mo</span>';}
       h+='</div>';
       opt.notes.forEach(function(n){h+='<div style="background:#fffbeb;border-radius:5px;padding:4px 8px;font-size:10px;color:#92400e;margin-top:6px"><i class="fas fa-exclamation-triangle" style="margin-right:4px"></i>'+n+'</div>';});
+      if(opt.evidence&&opt.evidence.ordersLostDay!=null){
+        h+='<div style="background:#f0fdf4;border:1px solid #86efac;border-radius:6px;padding:9px 11px;font-size:11px;margin-top:8px">'
+          +'<div style="font-weight:700;color:#166534;margin-bottom:4px;font-size:10px;text-transform:uppercase;letter-spacing:.4px"><i class="fas fa-scale-balanced" style="margin-right:5px"></i>Trade-off</div>'
+          +'<div style="color:#374151">Trimming costs about <b>'+opt.evidence.ordersLostDay+' orders/day</b> and <b>'+cur+' '+fmt(opt.evidence.gmvLostDay)+'/day</b> in GMV, against <b>'+cur+' '+fmt(opt.netFull)+'/mo</b> saved.</div>'
+          +'</div>';
+      }
       if(opt.evidence){
         var ev=opt.evidence;
         h+='<div style="background:#f0f9ff;border:1px solid #bae6fd;border-radius:6px;padding:9px 11px;font-size:11px;margin-top:8px">';
