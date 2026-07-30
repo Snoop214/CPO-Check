@@ -1385,29 +1385,6 @@ function renderHistChart(){
 // ================================================================
 // COST OPTIMIZER
 // ================================================================
-function haversineKm(lat1,lng1,lat2,lng2){
-  var R=6371, dLat=(lat2-lat1)*Math.PI/180, dLng=(lng2-lng1)*Math.PI/180;
-  var a=Math.sin(dLat/2)*Math.sin(dLat/2)+Math.cos(lat1*Math.PI/180)*Math.cos(lat2*Math.PI/180)*Math.sin(dLng/2)*Math.sin(dLng/2);
-  return R*2*Math.atan2(Math.sqrt(a),Math.sqrt(1-a));
-}
-
-function getNearestSameChain(store){
-  var master=APP.masterData||{};
-  var m=master[store.vendorId]; if(!m||!m.lat||!m.lng)return null;
-  var cfg=APP.optimizerConfig||{};
-  var maxKm=cfg.proximityRadiusKm||5;
-  var best=null, bestKm=Infinity;
-  Object.keys(master).forEach(function(vid){
-    if(vid===store.vendorId)return;
-    var n=master[vid];
-    if(!n.lat||!n.lng)return;
-    if((n.chainName||'').toLowerCase()!==(store.chain||'').toLowerCase())return;
-    var km=haversineKm(m.lat,m.lng,n.lat,n.lng);
-    if(km<maxKm&&km<bestKm){bestKm=km;best={storeName:n.storeName,vendorId:vid,km:Math.round(km*10)/10,minDrive:Math.round(km/30*60)};}
-  });
-  return best;
-}
-
 function calcOvertimeScenario(store){
   var cfg=APP.optimizerConfig||{};
   var ri=store.relieverInfo||{};
@@ -1804,46 +1781,6 @@ function calcTimingScenarioNotViable(store,minPickers,contractHrs,avgOrdersPerDa
     shiftInfo:shiftInfo,hourly:hourly,storeOpen:so3,storeClose:sc3,hasTiming:!!timing3};
 }
 
-function calcClosureScenario(store){
-  var nearbyStore=getNearestSameChain(store);
-  var canClose=nearbyStore!==null;
-  // Find nearest regardless of radius — for not-viable reason message
-  var master=APP.masterData||{};
-  var mSelf=master[store.vendorId];
-  var nearestAny=null,nearestKmAny=Infinity;
-  if(mSelf&&mSelf.lat&&mSelf.lng){
-    Object.keys(master).forEach(function(vid){
-      if(vid===store.vendorId)return;
-      var n=master[vid];
-      if(!n.lat||!n.lng)return;
-      if((n.chainName||'').toLowerCase()!==(store.chain||'').toLowerCase())return;
-      var km=haversineKm(mSelf.lat,mSelf.lng,n.lat,n.lng);
-      if(km<nearestKmAny){nearestKmAny=km;nearestAny=n;}
-    });
-  }
-  var wDaysCl=_getWorkDaysForCurrentMonth();
-  var siCl=_getSyncInfo(wDaysCl);
-  var dailyRateCl=siCl.syncDay>0?(store.pickerCost||0)/siCl.syncDay:(store.pickerCost||0)/wDaysCl;
-  var thisMthSaving=Math.round(dailyRateCl*siCl.remainingWorkDays);
-  var monthlySaving=Math.round(dailyRateCl*wDaysCl);
-  var chainStores=(APP.allData||[]).filter(function(r){return r.chain===store.chain;});
-  var chainOrders=chainStores.reduce(function(s,r){return s+r.orders;},0);
-  var chainPickerCost=chainStores.reduce(function(s,r){return s+(r.pickerCost||0);},0);
-  var oldChainCPO=chainOrders>0?chainPickerCost/chainOrders:0;
-  var newChainOrders=chainOrders-store.orders;
-  var newChainPickerCost=chainPickerCost-(store.pickerCost||0);
-  var newChainCPO=newChainOrders>0?newChainPickerCost/newChainOrders:0;
-  var chainImproves=newChainCPO<oldChainCPO;
-  return{canClose:canClose,nearbyStore:nearbyStore,
-    nearestStoreName:nearestAny?nearestAny.storeName:null,
-    nearestKm:nearestKmAny<Infinity?Math.round(nearestKmAny*10)/10:null,
-    thisMthSaving:thisMthSaving,monthlySaving:monthlySaving,
-    ordersLost:store.orders,
-    oldChainCPO:Math.round(oldChainCPO*100)/100,
-    newChainCPO:Math.round(newChainCPO*100)/100,
-    chainImproves:chainImproves};
-}
-
 // ── All Options Engine ────────────────────────────────────────────
 function calcAllOptions(store){
   var cfg=APP.optimizerConfig||{};
@@ -1875,7 +1812,6 @@ function calcAllOptions(store){
   var gmv=_getStoreHourlyGMV(store.vendorId);
   var utrThr=cfg.otUTRThreshold||5;
   var lowOrderThr=cfg.lowOrderPerDay||10;
-  var closureThr=cfg.closureOrdersPerWeek||50;
   var timing=_getStoreTiming(store.vendorId);
   var edgeThr=cfg.edgeOrderThreshold||1;
   var edgeGmv=cfg.edgeGMVThreshold||50;
@@ -2009,57 +1945,6 @@ function calcAllOptions(store){
     }else{
       notViable.push({label:'Trim store hours',reason:'Trimming edges does not eliminate OT and headcount is already at minimum (peak: '+peakInTrim+' orders/hr, min '+minPickersTrim+' pickers needed)'});
     }
-  }
-
-  // ── Store closure ──
-  var cl=calcClosureScenario(store);
-  if(cl.canClose){
-    var clNotes=[];
-    var ordersPerWeekCl=Math.round(avgOPD*7);
-    if(ordersPerWeekCl<closureThr)clNotes.push('Low volume: '+ordersPerWeekCl+' orders/wk — below '+closureThr+' orders/wk closure threshold');
-    if(!cl.chainImproves)clNotes.push('This store\'s CPO is below chain avg — closure would worsen chain CPO');
-    // Nearby store extra manpower cost
-    var nearbyD=(APP.allData||[]).filter(function(r){return r.vendorId===cl.nearbyStore.vendorId;})[0]||null;
-    var nearbyExtraPickersFull=0,nearbyExtraCostFull=0,nearbyExtraCostThis=0,nearbyAbsorbNote='';
-    if(nearbyD){
-      var nRates=APP.config.vendor_rates||[];
-      var nDept=(nearbyD.dept3pl||'').split(',')[0].trim();
-      var nVCfg=null;
-      for(var nri=0;nri<nRates.length;nri++){if(nRates[nri].vendorName===nDept||nRates[nri].vendorName.toLowerCase()===nDept.toLowerCase()){nVCfg=nRates[nri];break;}}
-      var nRate=nVCfg?nVCfg.baseRate:monthRate;
-      var nHrs=nVCfg?(nVCfg.hoursPerDay||contractHrs):contractHrs;
-      var nPickers=nearbyD.maxDailyPickers||nearbyD.pickerCount||1;
-      var nDaysEl=_getDaysElapsed(nearbyD);
-      var nOPD=nDaysEl>0?nearbyD.orders/nDaysEl:0;
-      var newNOPD=nOPD+avgOPD;
-      var maxPerPicker=utrThr*nHrs;
-      var nPickersNeeded=maxPerPicker>0?Math.ceil(newNOPD/maxPerPicker):nPickers;
-      nearbyExtraPickersFull=Math.max(0,nPickersNeeded-nPickers);
-      nearbyExtraCostFull=nearbyExtraPickersFull*nRate;
-      nearbyExtraCostThis=Math.round(nearbyExtraPickersFull*(nRate/wDays)*si.remainingWorkDays);
-      if(nearbyExtraPickersFull>0){
-        nearbyAbsorbNote=cl.nearbyStore.storeName+' needs +'+nearbyExtraPickersFull+' extra picker'+(nearbyExtraPickersFull>1?'s':'')+' — new load '+Math.round(newNOPD*10)/10+' orders/day (capacity '+maxPerPicker+'/picker)';
-      }else{
-        nearbyAbsorbNote=cl.nearbyStore.storeName+' absorbs orders within current headcount — new load '+Math.round(newNOPD*10)/10+' orders/day, capacity '+Math.round(maxPerPicker*nPickers)+'/day';
-      }
-    }
-    var clBkd=[{l:'This store picker cost saved',v:cl.monthlySaving,sign:1}];
-    if(nearbyExtraCostFull>0)clBkd.push({l:'Extra manpower at '+cl.nearbyStore.storeName,v:nearbyExtraCostFull,sign:-1});
-    var clNetFull=cl.monthlySaving-nearbyExtraCostFull;
-    var clNetThis=cl.thisMthSaving-nearbyExtraCostThis;
-    options.push({id:'closure',label:'Close store — redirect to '+cl.nearbyStore.storeName+' ('+cl.nearbyStore.km+' km)',
-      netFull:clNetFull,netThis:clNetThis,
-      breakdown:clBkd,
-      changes:{pickers:currentPickers+'→0',hours:'store closed',ot:'eliminated'},
-      ordersLost:cl.ordersLost,
-      newPickerCPO:null,oldChCPO:cl.oldChainCPO,newChCPO:cl.newChainCPO,
-      notes:clNotes.concat(nearbyAbsorbNote?[nearbyAbsorbNote]:[])});
-  }else{
-    var ordersPerWeekNV=Math.round(avgOPD*7);
-    var clR='No same-chain store within '+(cfg.proximityRadiusKm||5)+' km to absorb this store\'s orders.';
-    if(cl.nearestStoreName)clR+=' Nearest option: '+cl.nearestStoreName+' ('+cl.nearestKm+' km away).';
-    if(ordersPerWeekNV<closureThr)clR+=' Volume is also low ('+ordersPerWeekNV+' orders/wk, below the '+closureThr+'/wk closure-review threshold) — consider widening the radius or a standalone action instead.';
-    notViable.push({label:'Store closure',reason:clR});
   }
 
   options.sort(function(a,b){return b.netFull-a.netFull;});
@@ -2202,11 +2087,10 @@ function renderOptimizerView(){
   }
 
   // Bulk savings estimate using new options engine
-  var bulkTotal=0,bulkStores=0,bulkClosure=0;
+  var bulkTotal=0,bulkStores=0;
   flagged.forEach(function(s){
     var r=calcAllOptions(s);
     if(r.options.length&&r.options[0].netFull>0){bulkTotal+=r.options[0].netFull;bulkStores++;}
-    r.options.forEach(function(o){if(o.id==='closure'&&o.netFull>0)bulkClosure+=o.netFull;});
   });
 
   var h='<div style="padding:16px 28px">';
@@ -2237,7 +2121,6 @@ function renderOptimizerView(){
       +'<div style="font-size:10px;color:var(--muted);margin-top:2px">'+tip+'</div></div>';
   }
   h+=savCard('fa-calculator','Best Option Total/mo',bulkTotal,'#059669',bulkStores+' stores with actionable saving');
-  h+=savCard('fa-store-slash','Max Closure Saving/mo',bulkClosure,'#dc2626','if all viable low-order stores close');
   h+=savCard('fa-exclamation-circle','Flagged Stores',flagged.length,'#ea580c','above CPO '+actThr+' '+_getCurrency()+' threshold');
   h+='</div>';
 
@@ -3095,15 +2978,8 @@ function renderOptimizerTab(){
   h+='</div>';
 
   // Group 3 — Store Action Thresholds
-  h+=grp('Store Action Thresholds','fa-store','Order volume thresholds used to suggest timing reduction or store closure.');
+  h+=grp('Store Action Thresholds','fa-store','Order volume threshold used to suggest reduced shift hours.');
   h+=row('Low Order Threshold (Timing)','lowOrderPerDay',cfg.lowOrderPerDay||10,'orders/day',1,100,1,'Stores below this avg → suggest reduced shift hours');
-  h+=row('Closure Consideration Threshold','closureOrdersPerWeek',cfg.closureOrdersPerWeek||50,'orders/wk',1,500,5,'4-week avg below this → evaluate store closure');
-  h+='</div>';
-
-  // Group 4 — Proximity (Closure Check)
-  h+=grp('Store Proximity (Closure Check)','fa-map-marker-alt','A store can only be suggested for closure if a same-chain store is within this range — meaning delivery coverage can be absorbed.');
-  h+=row('Proximity Radius','proximityRadiusKm',cfg.proximityRadiusKm||5,'km',1,50,0.5,'Straight-line distance to nearest same-chain store');
-  h+=row('Max Drive Time','proximityDriveMin',cfg.proximityDriveMin||10,'min',1,60,1,'Approx drive time (straight-line ÷ 30 km/h)');
   h+='</div>';
 
   h+='<div style="display:flex;gap:8px;margin-top:4px">';
@@ -3121,9 +2997,6 @@ function saveOptimizerSettings(){
     relieverAttendancePct:parseFloat(document.getElementById('opt_relieverAttendancePct').value)||25,
     relieverMinPickers:parseInt(document.getElementById('opt_relieverMinPickers').value)||3,
     lowOrderPerDay:parseFloat(document.getElementById('opt_lowOrderPerDay').value)||10,
-    closureOrdersPerWeek:parseFloat(document.getElementById('opt_closureOrdersPerWeek').value)||50,
-    proximityRadiusKm:parseFloat(document.getElementById('opt_proximityRadiusKm').value)||5,
-    proximityDriveMin:parseFloat(document.getElementById('opt_proximityDriveMin').value)||10,
     otUTRThreshold:parseFloat(document.getElementById('opt_otUTRThreshold').value)||5,
     edgeOrderThreshold:parseFloat(document.getElementById('opt_edgeOrderThreshold').value)||1,
     edgeGMVThreshold:parseFloat(document.getElementById('opt_edgeGMVThreshold').value)||50,
