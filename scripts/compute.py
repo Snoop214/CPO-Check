@@ -252,7 +252,7 @@ def read_master_data(gc):
 
 def read_hourly_data(gc):
     """Read hourly orders, GMV and store timing from the hourly sheet.
-    Sheet1 = GMV per hour, Sheet2 = Avg daily orders per hour, Sheet3 = store timing.
+    Sheet1 = Avg daily orders per hour, Sheet2 = GMV per hour, Sheet3 = store timing.
     Columns: Chain ID, Chain Name, Vendor ID, Vendor Name, then hour 0..23
     """
     print('  reading hourly data...')
@@ -301,8 +301,8 @@ def read_hourly_data(gc):
             print(f'    {tab_name}: {len(result)} stores')
             return result
 
-        orders_hourly = read_hourly_tab('Sheet2')
-        gmv_hourly    = read_hourly_tab('Sheet1')
+        orders_hourly = read_hourly_tab('Sheet1')
+        gmv_hourly    = read_hourly_tab('Sheet2')
 
         # Sheet3 = store timing: Vendor ID, Vendor Name, Day of Week, Schedule End Time, Schedule Start Time, Shift Duration
         timing = {}

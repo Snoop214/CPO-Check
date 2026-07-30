@@ -1889,7 +1889,7 @@ function calcAllOptions(store){
   var peakOrders=0,peakHr=-1;
   if(hourly){for(var hx=0;hx<24;hx++){if((hourly[hx]||0)>peakOrders){peakOrders=hourly[hx];peakHr=hx;}}}
   var minPickers=peakOrders>0?Math.max(1,Math.ceil(peakOrders/utrThr)):1;
-  var singlePickerViable=peakHr>=0&&peakOrders<=utrThr; // Phase 2: can 1 picker handle peak?
+  var singlePickerViable=peakHr<0?null:(peakOrders<=utrThr); // Phase 2: can 1 picker handle peak? null = no hourly data to judge from
   var canReduceHead=currentPickers>minPickers;
   var pickersReduced=Math.max(0,currentPickers-minPickers);
   var untrimHrs=snOpen!=null?(snClose-snOpen):null;
@@ -1941,8 +1941,8 @@ function calcAllOptions(store){
 
   // ── Trim + headcount or trim + OT ──
   if(!hourly){
-    var volNote=avgOPD>0&&avgOPD<lowOrderThr?' — store averages '+Math.round(avgOPD*10)/10+' orders/day (below '+lowOrderThr+' threshold): timing review strongly recommended':'';
-    notViable.push({label:'Trim store hours',reason:'No hourly order data available'+volNote+'. Run Refresh to load hourly breakdown.'});
+    var volNote=avgOPD>0&&avgOPD<lowOrderThr?' This store also averages only '+Math.round(avgOPD*10)/10+' orders/day (below the '+lowOrderThr+'/day threshold) — worth a manual timing review.':'';
+    notViable.push({label:'Trim store hours',reason:'No hourly order data available for this store. Run Refresh to load the hourly breakdown.'+volNote});
   }else if(!timing){
     notViable.push({label:'Trim store hours',reason:'No Sheet3 store timing data for this store'});
   }else{
@@ -2051,9 +2051,9 @@ function calcAllOptions(store){
       notes:clNotes.concat(nearbyAbsorbNote?[nearbyAbsorbNote]:[])});
   }else{
     var ordersPerWeekNV=Math.round(avgOPD*7);
-    var clR='No same-chain store within '+(cfg.proximityRadiusKm||5)+' km';
-    if(cl.nearestStoreName)clR+=' (nearest: '+cl.nearestStoreName+', '+cl.nearestKm+' km away)';
-    if(ordersPerWeekNV<closureThr)clR+=' — low volume ('+ordersPerWeekNV+' orders/wk, threshold '+closureThr+'/wk): widen radius or consider standalone action';
+    var clR='No same-chain store within '+(cfg.proximityRadiusKm||5)+' km to absorb this store\'s orders.';
+    if(cl.nearestStoreName)clR+=' Nearest option: '+cl.nearestStoreName+' ('+cl.nearestKm+' km away).';
+    if(ordersPerWeekNV<closureThr)clR+=' Volume is also low ('+ordersPerWeekNV+' orders/wk, below the '+closureThr+'/wk closure-review threshold) — consider widening the radius or a standalone action instead.';
     notViable.push({label:'Store closure',reason:clR});
   }
 
