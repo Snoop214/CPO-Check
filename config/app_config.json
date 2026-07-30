@@ -96,8 +96,18 @@
     }
   ],
   "working_days": [],
-  "holidays": [],
-  "ramadan": { "start": "", "end": "" },
+  "holidays": [
+    {
+      "name": "Islamic New Year",
+      "date": "2026-06-15",
+      "country": "UAE",
+      "id": "1785414562097"
+    }
+  ],
+  "ramadan": {
+    "start": "",
+    "end": ""
+  },
   "optimizer": {
     "currency": "AED",
     "actionThreshold": 4,
