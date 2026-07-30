@@ -56,11 +56,14 @@
       "id": "vr_trumax",
       "vendorName": "Trumax",
       "baseRate": 2780,
-      "hoursPerDay": 10,
+      "hoursPerDay": 12,
       "effectiveStartMonth": 1,
       "effectiveStartYear": 2025,
       "effectiveEndMonth": null,
-      "effectiveEndYear": null
+      "effectiveEndYear": null,
+      "otMultiplier": 1.5,
+      "ramadanHours": 10,
+      "ramadanOT": false
     },
     {
       "id": "vr_sanket",
