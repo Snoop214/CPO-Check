@@ -420,7 +420,12 @@ document.addEventListener('DOMContentLoaded', function() {
     });
   });
   showLoading('Loading MTD data...');
-  google.script.run.withSuccessHandler(onInitialData).withFailureHandler(onError).getInitialData();
+  var _initSettled=false;
+  setTimeout(function(){
+    if(_initSettled)return;
+    document.getElementById('mainContent').innerHTML='<div class="empty-state"><i class="fas fa-wifi" style="font-size:40px;color:var(--danger);opacity:.5;display:block;margin-bottom:12px"></i><h2>Taking longer than expected</h2><p>This can happen right after a data update while the site finishes deploying — usually resolves within a minute.</p><button class="btn btn-primary" style="margin-top:12px" onclick="location.reload()"><i class="fas fa-sync-alt" style="margin-right:5px"></i>Retry</button></div>';
+  },20000);
+  google.script.run.withSuccessHandler(function(r){_initSettled=true;onInitialData(r);}).withFailureHandler(function(e){_initSettled=true;onError(e);}).getInitialData();
 });
 
 function onInitialData(r) {
