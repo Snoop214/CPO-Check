@@ -17,7 +17,7 @@
       "id": "vr_transguard",
       "vendorName": "Transguard",
       "baseRate": 2574,
-      "hoursPerDay": 12,
+      "hoursPerDay": 11,
       "effectiveStartMonth": 1,
       "effectiveStartYear": 2025,
       "effectiveEndMonth": null,
