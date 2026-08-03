@@ -209,28 +209,33 @@ Evaluates cost-reduction options per store based on current MTD data. Shows ALL 
 ### Options evaluated (ranked by net saving, highest first)
 
 **1. Headcount reduction (no trim)**
-- `minPickers = ceil(peak / utrThr)`
+- `minPickersTheoretical = ceil(peak / utrThr)`
+- `minPickers = max(minPickersTheoretical, currentPickers - 1)` — never suggest cutting more than 1 picker at a time in a single recommendation, even if peak capacity math would allow a bigger cut in theory. Re-evaluate after each step.
 - If `minPickers >= currentPickers` → not viable
 - Net = pickerSaving − covOTFull(minPickers, untrimHrs)
+- When the cap changes the outcome (`minPickersTheoretical < currentPickers - 1`), a note explains the theoretical minimum and that the step was capped
 
 **2. Trim low-volume edges + headcount reduction**
 - Only shown if trimming eliminates extra OT beyond headcount-only option
 - Suppressed if `canReduceAfterTrim && !trimAddsOT` (same saving as option 1)
 - Net = pickerSaving + OTeliminated − covOTFull(minPickersTrim, trimHrs)
 - trimHrs is smaller → covOT is smaller or zero → bigger net saving
+- Same -1-per-step cap as option 1 applies to `minPickersTrim`
+- Shows a "Trade-off" callout: orders/day and GMV/day lost from the trim, next to the AED/month saved — not netted together, shown side by side so a human judges whether it's worth it
 
 **3. Trim low-volume edges — reduce OT only (keep headcount)**
 - When trimming eliminates OT but headcount is already at minimum
 - Net = OT eliminated by trim
 
-**4. Store closure**
-- Requires same-chain store within `proximityRadiusKm`
-- Net saving = this store cost saved − extra manpower at nearby store
+**Store closure — REMOVED.** Never suggest store closure as a cost-reduction option. This was
+previously option 4; it, `calcClosureScenario`, `getNearestSameChain`, `haversineKm`, the bulk
+"Max Closure Saving/mo" stat card, and the Closure/Proximity Settings fields were all removed
+entirely (not just hidden) — do not re-add.
 
 ### Day-off coverage OT formula (key — never revert to flat reliever)
 ```
 covOTFull(n, storeHrs):
-  otHrs = max(0, storeHrs − contractHrs)   // excess beyond contract
+  otHrs = max(0, storeHrs − contractHrs)   // excess beyond contract hours; contractHrs already includes break, do NOT add +1
   return n × (effWDays/6) × otHrs × otMultiplier × hrRate
 
 covOTThis(n, storeHrs):  // for remaining-month projection
@@ -239,22 +244,37 @@ covOTThis(n, storeHrs):  // for remaining-month projection
 - `n` = remaining pickers after reduction
 - `effWDays` = weekday work days (if `weekdayDayOffOnly=1`) or all work days
 - `hrRate = monthRate / (wDays × contractHrs)`
-- Fallback: if no timing data (`storeHrs = null`), falls back to `relFull(n)` (flat reliever estimate)
+- Fallback when no timing data (`storeHrs = null`): a flat OT-based estimate (`relFull(n)`), labeled
+  "no timing data — OT-based estimate". Never call this a "reliever" — there is no external reliever
+  role in this model; coverage is always framed as OT or a store-timing adjustment.
 
 ### Not-viable display
 Every option shows specific reason with actual numbers:
 - "Peak hour 7pm has 8 orders — minimum 2 pickers needed at UTR threshold 5, already at 2"
-- "No same-chain store within 5 km (nearest: Union Coop Al Twar, 7.2 km away)"
 - "All hours are above the 1 order/hr threshold — no edges to trim"
 
 ### Key design decisions
-- **No external reliever model** — day-off coverage = colleague OT, NOT flat daily rate
+- **No external reliever model** — day-off coverage = colleague OT (or, without timing data, a
+  flat OT-based estimate), NOT a flat reliever daily rate, and never called a "reliever"
+- **Never suggest store closure** — removed entirely, see above
+- **Never cut headcount by more than 1 picker per recommendation** — see cap above
 - Picker day-offs are weekday-only (Mon–Fri) — `_weekdaysOnly(wDays)` helper
 - UTR threshold is binary per hour — any single hour > threshold means that many pickers must be present
 - No pre-named option frames — label describes what the combination achieves
-- Chain CPO impact shown for headcount and closure options
 - Trim+headcount option suppressed when it produces same saving as headcount-only
 - Peak scan covers ALL 24 hours (not restricted to store hours) — `peakHr` init = -1 to avoid 0-order midnight as fake peak
+
+### Weekly Staffing Schedule (per store, in Cost Optimizer)
+- Each store card shows a 7-day × 24-hour heatmap (`renderWeeklySchedule(store)`): pickers needed
+  per hour (green=1, red=2+, via `otUTRThreshold`), "close" outside that day's actual operating
+  hours, "OT" beyond the vendor's `contractHrs` from opening
+- Per-day operating hours come from `_getStoreWeeklyTiming(vendorId)` → `APP.storeTimingData[vid].byDay`
+  (Sun–Sat), populated by `compute.py` from Sheet3 (which has one row per day of week per store,
+  merged across split-shift rows into a combined span per day)
+- **Known limitation, stated in the UI**: hourly order/GMV data (Sheet1/Sheet2) has no day-of-week
+  breakdown — one aggregate 24-hour curve per store — so the heatmap reflects real day-to-day
+  differences in *operating hours*, applied to the same order curve every day, not real
+  day-to-day differences in *order volume* (that data doesn't exist in the source sheets yet)
 
 ### Optimizer config (stored in PropertiesService `cpo_config_optimizer`)
 - `actionThreshold` — CPO above this = flagged (default 4.0)
@@ -262,9 +282,9 @@ Every option shows specific reason with actual numbers:
 - `otUTRThreshold` — max orders/hr per picker (default 5)
 - `edgeOrderThreshold` — avg orders/hr below this = low-volume edge (default 1)
 - `edgeGMVThreshold` — avg GMV/hr below this = low-volume edge (default 50)
-- `proximityRadiusKm` — max km for store closure coverage (default 5)
 - `otMultiplier` — OT pay rate multiplier (default 1.5)
 - `weekdayDayOffOnly` — 1 = day-offs Mon–Fri only (default 1)
+- `closureOrdersPerWeek`/`proximityRadiusKm`/`proximityDriveMin` — REMOVED along with store closure, do not re-add
 
 ### Master data required for optimizer
 - `APP.masterData` — keyed by vendorId, includes `lat`, `lng`, `chainName`, `storeName`
@@ -388,14 +408,21 @@ Alternatively: set up auto-fetch in Settings → Fetch All Data → Auto-schedul
 - `_snapHalf(h, 'up')` → snaps open time UP to nearest :00 or :30
 - `_snapHalf(h, 'down')` → snaps close time DOWN to nearest :00 or :30
 - `_trimEdgeHours(snOpen, snClose, hourly, gmv, orderThr, gmvThr)` → removes low-volume edge hours from both ends, returns `{open, close, trimStart[], trimEnd[]}`
+- **Sheet3 has one row per day of week per store** (Sun–Sat), sometimes more (split shifts). `compute.py`'s `read_hourly_data()` captures ALL of them, merging split-shift rows for the same day into their combined span (`min(open)`–`max(close)`), producing `timing[vid] = {openHr, closeHr, byDay:{Sunday:{...},...}}`. The flat `openHr`/`closeHr` is the widest-duration day, kept for backward compatibility with every existing caller of `_getStoreTiming()`. `byDay` (new) feeds the Weekly Staffing Schedule — see below. Do not go back to keeping only the first row per store.
 
 ---
 
 ## OT Model Calculation
-- `totalShiftHrs = contractHrs + 1` (1 hr break added to contract hours)
-- `otHrs = max(0, activeStoreHrs - totalShiftHrs)` rounded to nearest 0.5
+- `contractHrs` (from Vendor Rates) is the picker's full on-site shift length, break already included — do NOT add +1 for a break
+- `otHrs = max(0, activeStoreHrs - contractHrs)` rounded to nearest 0.5
 - OT cost = `otHrs × otMultiplier × hourlyRate × pickers × workDays`
 - `hourlyRate = monthRate / (wDays × contractHrs)`
+
+## Headcount Reduction Cap
+- Headcount-reduction options (`headcount`, `trim_headcount`) never suggest cutting more than **1 picker** below current in a single recommendation, even if peak-hour capacity math would allow a bigger cut
+- `minPickers = max(theoreticalMinFromPeak, currentPickers - 1)` — re-evaluate after each step rather than jumping straight to a theoretical minimum
+- When the cap actually changes the outcome (theoretical minimum is more than 1 below current), a note is added explaining the theoretical minimum and that the step was capped
+- No external reliever role — coverage during a picker's day off is either OT paid to a colleague (`covOTFull`/`covOTThis`) or, when no timing data exists, a flat OT-based estimate. Never reintroduce "reliever" as a distinct cost line in this flow (see also "Critical Bugs Fixed" below)
 
 ---
 

@@ -672,7 +672,7 @@ function computeCPO(period,dateIndex,userTypes,archOrders,archAttend){
     var vendorName=(so&&so.vendorName)?so.vendorName:(mi.storeName||vendorId);
     var champion=mi.champion||'', supervisor=mi.supervisor||'', city=mi.emirates||'';
 
-    var periodDays=isMTD?dates.length:(period==='mtd'?1:(period==='weekly'?7:workDays));
+    var periodDays=isMTD?Object.keys(validDateSet).length:(period==='mtd'?1:(period==='weekly'?7:workDays));
     var champAlloc=0;
     if(champion&&champStoreCount[champion]>0)champAlloc=(champCost/champStoreCount[champion])*(periodDays/workDays);
     var supAlloc=0;

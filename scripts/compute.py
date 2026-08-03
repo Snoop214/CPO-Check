@@ -392,9 +392,14 @@ def compute_cpo(period, date_index, orders, attend, master, cfg, is_mtd=False):
     work_days_overrides = {o['key']: o['days'] for o in cfg.get('working_days', [])} if isinstance(cfg.get('working_days'), list) else cfg.get('working_days', {})
     work_days = get_working_days(month, year, work_days_overrides)
 
-    vendor_rates = cfg.get('vendor_rates', [])
-    emp_costs    = cfg.get('employee_costs', [])
-    opt_cfg      = cfg.get('optimizer', {})
+    vendor_rates  = cfg.get('vendor_rates', [])
+    emp_costs     = cfg.get('employee_costs', [])
+    opt_cfg       = cfg.get('optimizer', {})
+    holiday_dates = {h['date'] for h in cfg.get('holidays', [])}
+    ramadan_cfg   = cfg.get('ramadan', {})
+    ramadan_start = ramadan_cfg.get('start', '')
+    ramadan_end   = ramadan_cfg.get('end',   '')
+    ramadan_set   = {dl for dl in dates if ramadan_start and ramadan_end and ramadan_start <= dl <= ramadan_end}
 
     champ_entry = resolve_effective_emp(emp_costs, month, year, 'Champion')
     sup_entry   = resolve_effective_emp(emp_costs, month, year, 'City Supervisor')
@@ -408,8 +413,11 @@ def compute_cpo(period, date_index, orders, attend, master, cfg, is_mtd=False):
         vr = resolve_effective_rate(vendor_rates, month, year, nm)
         if vr and nm not in vendor_map:
             vendor_map[nm] = {
-                'rate':  vr.get('baseRate', 2750),
-                'hours': vr.get('hoursPerDay', 10),
+                'rate':          vr.get('baseRate', 2750),
+                'hours':         vr.get('hoursPerDay', 10),
+                'ot_mult':       vr.get('otMultiplier', 1.5),
+                'ramadan_hours': vr.get('ramadanHours', vr.get('hoursPerDay', 10)),
+                'ramadan_ot':    vr.get('ramadanOT', False),
             }
 
     attend_date_map = {d: i for i, d in enumerate(attend_dates)}
@@ -475,28 +483,51 @@ def compute_cpo(period, date_index, orders, attend, master, cfg, is_mtd=False):
                 rate, v_hours = vm['rate'], vm['hours']
 
                 present = 0
+                hol_days = 0
+                ram_days = 0
                 if is_mtd:
                     for di, dl in enumerate(dates):
                         if dl not in valid_date_set: continue
                         a_idx = attend_date_map.get(dl)
                         if a_idx is not None and a_idx < len(pk['values']):
                             day_val = pk['values'][a_idx]
-                            present += day_val
                             if day_val > 0:
+                                if dl in holiday_dates:
+                                    hol_days += day_val
+                                elif dl in ramadan_set:
+                                    ram_days += day_val
+                                else:
+                                    present += day_val
                                 daily_counts[dl] = daily_counts.get(dl, 0) + 1
                 else:
                     target_date = dates[date_index] if date_index < len(dates) else None
                     a_idx = attend_date_map.get(target_date)
                     if a_idx is not None and a_idx < len(pk['values']):
-                        present = pk['values'][a_idx]
+                        day_val = pk['values'][a_idx]
+                        if day_val > 0:
+                            if target_date in holiday_dates:
+                                hol_days = day_val
+                            elif target_date in ramadan_set:
+                                ram_days = day_val
+                            else:
+                                present = day_val
 
-                if present > 0:
-                    picker_cost += (rate / work_days) * present
-                    picker_count += 1
-                    total_present += present
-                    total_hours += present * v_hours
+                total_p = present + hol_days + ram_days
+                if total_p > 0:
+                    daily_rate = rate / work_days
+                    ot_mult    = vm.get('ot_mult', 1.5)
+                    hol_extra  = hol_days * daily_rate * (ot_mult - 1)
+                    ram_extra  = 0
+                    if ram_days > 0 and vm.get('ramadan_ot'):
+                        r_hrs     = vm.get('ramadan_hours', v_hours)
+                        hr_rate   = daily_rate / v_hours if v_hours > 0 else 0
+                        ram_extra = ram_days * max(0, r_hrs - v_hours) * hr_rate * ot_mult
+                    picker_cost   += daily_rate * total_p + hol_extra + ram_extra
+                    picker_count  += 1
+                    total_present += total_p
+                    total_hours   += total_p * v_hours
                     dept_set.add(dept)
-                    picker_days_list.append({'days': present, 'dept': dept, 'rate': rate, 'hours': v_hours})
+                    picker_days_list.append({'days': total_p, 'dept': dept, 'rate': rate, 'hours': v_hours})
 
         max_daily_pickers = 1
         if is_mtd and daily_counts:
@@ -522,7 +553,7 @@ def compute_cpo(period, date_index, orders, attend, master, cfg, is_mtd=False):
         city        = mi.get('emirates', '')
 
         # Allocations
-        period_days_alloc = len(dates) if is_mtd else (1 if period == 'mtd' else (7 if period == 'weekly' else work_days))
+        period_days_alloc = len(valid_date_set) if is_mtd else (1 if period == 'mtd' else (7 if period == 'weekly' else work_days))
         champ_alloc = (champ_cost / champ_store_count[champion]) * (period_days_alloc / work_days) if champion and champ_store_count.get(champion) else 0
         sup_total   = sum(champ_store_count.get(c, 0) for c in sup_champions.get(supervisor, set()))
         sup_alloc   = (sup_cost / sup_total) * (period_days_alloc / work_days) if supervisor and sup_total > 0 else 0

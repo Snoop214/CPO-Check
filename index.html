@@ -263,6 +263,8 @@ if(typeof google==='undefined'||!google.script||window.location.hostname.indexOf
     revokeUser:function(email){return _ghWriteUsers(function(u){return u.map(function(x){return x.email===email?Object.assign({},x,{status:'revoked'}):x;});});},
     reinstateUser:function(email){return _ghWriteUsers(function(u){return u.map(function(x){return x.email===email?Object.assign({},x,{status:'active'}):x;});});},
     removeUser:function(email){return _ghWriteUsers(function(u){return u.filter(function(x){return x.email!==email;});});},
+    listArchivedMonths:function(){return Promise.resolve([]);},
+    computeCPOFromArchive:function(){return Promise.resolve({error:'Archive not available in static mode'});},
   };
 
   // GitHub API helpers for config writes
@@ -872,7 +874,7 @@ function renderHistoricalView(){
   if(trendView==='weekly'){
     weeks.forEach(function(w){if(w.label<=nowDate)dateOpts+='<option value="'+w.idx+'">'+w.label+'</option>';});
   } else if(trendView==='monthly'){
-    months.forEach(function(m){if(m.label<=nowYM)dateOpts+='<option value="mo_'+m.idx+'">'+m.label+'</option>';});
+    months.forEach(function(m){if(m.label<=nowYM)dateOpts+='<option value="mo_'+m.label+'">'+m.label+'</option>';});
     archived.forEach(function(a){if(a.label<=nowYM)dateOpts+='<option value="ar_'+a.fileId+'">'+a.label+'</option>';});
   } else {
     days.forEach(function(d){if(d.label<=nowDate)dateOpts+='<option value="'+d.idx+'">'+d.label+'</option>';});
@@ -1432,7 +1434,7 @@ function calcOvertimeScenario(store){
     if(activeStart>=0){snappedOpen=adjOpen=activeStart;snappedClose=adjClose=activeEnd+1;rawStoreHrs=adjClose-adjOpen;}
   }
   var adjStoreHrs=adjClose-adjOpen;
-  var totalShiftHrs=contractHrs+1; // contract hrs work + 1 hr break
+  var totalShiftHrs=contractHrs; // contract hrs already include break
   var otHrs=adjStoreHrs>0?Math.max(0,Math.round((adjStoreHrs-totalShiftHrs)*2)/2):0;
 
   // Day-off rate: 1 per 6 working days; weekday-only means exclude weekends
@@ -1541,61 +1543,6 @@ function _fmtHalf(h){
   if(whole===12)suffix='pm';
   if(whole===0)suffix='am';
   return label+(half?':30':':00')+suffix;
-}
-// Spread N pickers evenly across store window; each works contractHrs + 1hr break on-site
-function _calcShiftLayout(open,close,contractHrs,numPickers){
-  if(open==null||close==null||numPickers<=0)return[];
-  var onSite=contractHrs+1;
-  var storeH=close-open;
-  if(numPickers===1)return[{n:1,s:open,e:Math.min(open+onSite,close)}];
-  var spread=Math.max(0,storeH-onSite);
-  var gap=spread/(numPickers-1);
-  var shifts=[];
-  for(var i=0;i<numPickers;i++){var s=open+i*gap;shifts.push({n:i+1,s:Math.round(s*2)/2,e:Math.round((s+onSite)*2)/2});}
-  return shifts;
-}
-function _renderShiftSchedule(open,close,contractHrs,numPickers,peakHr){
-  if(open==null||close==null)return'';
-  var shifts=_calcShiftLayout(open,close,contractHrs,numPickers);
-  var span=close-open;
-  var colors=['#3b82f6','#10b981','#f59e0b','#8b5cf6','#ef4444'];
-  var h='<div style="margin-top:10px;padding-top:8px;border-top:1px dashed #bae6fd">';
-  h+='<div style="font-size:10px;font-weight:700;color:#0369a1;margin-bottom:6px;text-transform:uppercase;letter-spacing:.4px"><i class="fas fa-calendar-alt" style="margin-right:5px"></i>Proposed Shift Schedule</div>';
-  h+='<div style="display:grid;grid-template-columns:auto 1fr;gap:3px 14px;font-size:11px;margin-bottom:8px">';
-  shifts.forEach(function(sh){
-    h+='<span style="color:#374151;font-weight:600">Picker '+sh.n+'</span><span style="color:#0284c7">'+_fmtHalf(sh.s)+'  –  '+_fmtHalf(sh.e)+'  <span style="color:#9ca3af">('+contractHrs+' hrs work + 1 hr break)</span></span>';
-  });
-  var relNote=numPickers>1?numPickers+' pickers × 1 weekday off each = '+numPickers+' reliever days/wk':'1 reliever day/wk';
-  h+='<span style="color:#374151;font-weight:600">Day-off</span><span style="color:#6b7280">'+relNote+' (Mon–Fri)</span>';
-  h+='</div>';
-  h+='<div style="position:relative;height:32px;border-radius:4px;overflow:visible;margin-bottom:3px">';
-  h+='<div style="position:absolute;left:0;right:0;top:6px;height:20px;background:#e2e8f0;border-radius:3px"></div>';
-  shifts.forEach(function(sh,i){
-    var l=Math.max(0,(sh.s-open)/span*100);
-    var r=Math.max(0,(close-sh.e)/span*100);
-    h+='<div style="position:absolute;left:'+l+'%;right:'+r+'%;top:'+(6+i*2)+'px;height:'+(20-i*2)+'px;background:'+colors[i%colors.length]+';opacity:0.78;border-radius:3px" title="Picker '+sh.n+': '+_fmtHalf(sh.s)+'–'+_fmtHalf(sh.e)+'"></div>';
-  });
-  var otStart=open+contractHrs+1;
-  if(otStart<close){
-    var otL=(otStart-open)/span*100;
-    h+='<div style="position:absolute;left:'+otL+'%;right:0;top:0;height:32px;background:rgba(220,38,38,0.09);border-left:2px dashed #dc2626;border-radius:0 3px 3px 0"></div>';
-    h+='<div style="position:absolute;left:'+otL+'%;bottom:0;font-size:9px;color:#dc2626;font-weight:700;padding-left:2px">OT</div>';
-  }
-  if(peakHr!=null&&peakHr>=open&&peakHr<=close){
-    var pp=(peakHr-open)/span*100;
-    h+='<div style="position:absolute;left:'+pp+'%;top:0;width:2px;height:32px;background:#dc2626;z-index:4"></div>';
-    h+='<div style="position:absolute;left:'+pp+'%;top:0;font-size:9px;color:#dc2626;font-weight:700;padding-left:3px;z-index:5;white-space:nowrap">⚡'+_fmtH(peakHr)+'</div>';
-  }
-  h+='</div>';
-  h+='<div style="position:relative;height:14px;margin-bottom:4px">';
-  for(var lh=Math.ceil(open);lh<=close;lh++){if(lh%2===0){var lp=(lh-open)/span*100;h+='<span style="position:absolute;left:'+lp+'%;transform:translateX(-50%);font-size:9px;color:#9ca3af">'+_fmtH(lh)+'</span>';}}
-  h+='</div>';
-  h+='<div style="display:flex;gap:8px;flex-wrap:wrap;font-size:10px;color:#6b7280">';
-  shifts.forEach(function(sh,i){h+='<span><span style="display:inline-block;width:10px;height:10px;background:'+colors[i%colors.length]+';border-radius:2px;margin-right:3px;vertical-align:middle"></span>Picker '+sh.n+'</span>';});
-  if(otStart<close)h+='<span><span style="display:inline-block;width:10px;height:10px;background:rgba(220,38,38,0.2);border:1px dashed #dc2626;border-radius:2px;margin-right:3px;vertical-align:middle"></span>OT zone</span>';
-  if(peakHr!=null&&peakHr>=open&&peakHr<=close)h+='<span><span style="display:inline-block;width:2px;height:10px;background:#dc2626;margin-right:3px;vertical-align:middle"></span>Peak hour</span>';
-  h+='</div></div>';
-  return h;
 }
 function _snapHalf(h,dir){
   // dir 'up' = ceil to next :00 or :30 (earliest picker can start)
@@ -1842,14 +1789,16 @@ function calcAllOptions(store){
   // Peak = busiest hour across full day; -1 means no data (avoids midnight-with-0 as fake peak)
   var peakOrders=0,peakHr=-1;
   if(hourly){for(var hx=0;hx<24;hx++){if((hourly[hx]||0)>peakOrders){peakOrders=hourly[hx];peakHr=hx;}}}
-  var minPickers=peakOrders>0?Math.max(1,Math.ceil(peakOrders/utrThr)):1;
+  var minPickersTheoretical=peakOrders>0?Math.max(1,Math.ceil(peakOrders/utrThr)):1;
+  // Never suggest cutting more than 1 picker at a time, even if peak capacity math would allow more —
+  // re-evaluate after each step rather than jumping straight to a theoretical minimum.
+  var minPickers=Math.max(minPickersTheoretical,currentPickers-1);
   var singlePickerViable=peakHr<0?null:(peakOrders<=utrThr); // Phase 2: can 1 picker handle peak? null = no hourly data to judge from
   var canReduceHead=currentPickers>minPickers;
   var pickersReduced=Math.max(0,currentPickers-minPickers);
   var untrimHrs=snOpen!=null?(snClose-snOpen):null;
   var trimHrs=adjOpen!=null?(adjClose-adjOpen):untrimHrs;
-  var totalShift=contractHrs+1;
-  function otHrs(activeHrs){return activeHrs!=null?Math.max(0,Math.round((activeHrs-totalShift)*2)/2):0;}
+  function otHrs(activeHrs){return activeHrs!=null?Math.max(0,Math.round((activeHrs-contractHrs)*2)/2):0;}
   var otUntrim=otHrs(untrimHrs),otTrim=otHrs(trimHrs);
   var otMult=cfg.otMultiplier||1.5;
   var hrRate=monthRate/(wDays*contractHrs);
@@ -1874,9 +1823,13 @@ function calcAllOptions(store){
     var hcSH=untrimHrs;
     var rF=covOTFull(minPickers,hcSH),rT=covOTThis(minPickers,hcSH);
     var hcCovOTHrs=hcSH!=null?Math.max(0,Math.round((hcSH-contractHrs)*2)/2):null;
-    var hcCovLabel=hcSH==null?'Day-off coverage (no timing — est. reliever)':hcCovOTHrs===0?'Day-off coverage OT: 0 hrs (store fits in contract)':'Day-off coverage OT ('+hcCovOTHrs+' hrs/off × '+Math.round(effWDays/6*10)/10+' days/mo)';
+    var hcCovLabel=hcSH==null?'Day-off coverage (no timing data — OT-based estimate)':hcCovOTHrs===0?'Day-off coverage OT: 0 hrs (store fits in contract)':'Day-off coverage OT ('+hcCovOTHrs+' hrs/off × '+Math.round(effWDays/6*10)/10+' days/mo)';
     var newPC=Math.max(0,(store.pickerCost||0)-Math.round(pickersReduced*avgPickerCost));
     var chs=chainCPOs(newPC);
+    var hcNotes=[];
+    if(minPickersTheoretical<currentPickers-1){
+      hcNotes.push('Peak demand would technically allow as few as '+minPickersTheoretical+' picker'+(minPickersTheoretical>1?'s':'')+' — capping this step to -1 from current so the change can be re-evaluated after it takes effect, rather than cutting further in one step.');
+    }
     options.push({id:'headcount',label:'Reduce to '+picLabel+' — keep current hours',
       netFull:pSavF-rF,netThis:pSavT-rT,
       breakdown:[{l:'Picker saving ('+pickersReduced+' removed)',v:pSavF,sign:1},{l:hcCovLabel,v:rF,sign:-1}],
@@ -1890,7 +1843,7 @@ function calcAllOptions(store){
         storeHrsForCov:hcSH!=null?Math.round(hcSH*10)/10:null,
         pickersAfter:minPickers,relFull:rF},
       newPickerCPO:store.orders>0?Math.round(newPC/store.orders*100)/100:null,
-      oldChCPO:chs.old,newChCPO:chs.nw,notes:[]});
+      oldChCPO:chs.old,newChCPO:chs.nw,notes:hcNotes});
   }
 
   // ── Trim + headcount or trim + OT ──
@@ -1903,7 +1856,8 @@ function calcAllOptions(store){
     var hasTrim=trimS.length||trimE.length;
     var peakInTrim=0;
     if(adjOpen!=null){for(var ht=Math.floor(adjOpen);ht<Math.ceil(adjClose);ht++){if((hourly[ht]||0)>peakInTrim)peakInTrim=hourly[ht];}}
-    var minPickersTrim=peakInTrim>0?Math.max(1,Math.ceil(peakInTrim/utrThr)):1;
+    var minPickersTrimTheoretical=peakInTrim>0?Math.max(1,Math.ceil(peakInTrim/utrThr)):1;
+    var minPickersTrim=Math.max(minPickersTrimTheoretical,currentPickers-1);
     var canReduceAfterTrim=currentPickers>minPickersTrim;
     var pickersReducedTrim=Math.max(0,currentPickers-minPickersTrim);
     var trimParts=[];
@@ -1929,6 +1883,10 @@ function calcAllOptions(store){
       var tNewPC=Math.max(0,(store.pickerCost||0)-Math.round(pickersReducedTrim*avgPickerCost));
       var tChs=chainCPOs(tNewPC);
       var bkd=[{l:'Picker saving ('+pickersReducedTrim+' removed)',v:tPicF,sign:1},{l:'OT eliminated by trim',v:tOTF,sign:1},{l:tCovLabel,v:tRF,sign:-1}];
+      var thNotes=[];
+      if(minPickersTrimTheoretical<currentPickers-1){
+        thNotes.push('Peak demand in the trimmed window would technically allow as few as '+minPickersTrimTheoretical+' picker'+(minPickersTrimTheoretical>1?'s':'')+' — capping this step to -1 from current so the change can be re-evaluated after it takes effect.');
+      }
       options.push({id:'trim_headcount',label:'Trim low-volume hours + reduce to '+tPicLbl,
         netFull:(tPicF+tOTF)-tRF,netThis:(tPicT+tOTT)-tRT,
         breakdown:bkd,
@@ -1943,7 +1901,7 @@ function calcAllOptions(store){
           pickersAfter:minPickersTrim,relFull:tRF,otElimHrs:otUntrim-otTrim,edgeThr:edgeThr,edgeGmv:edgeGmv,
           ordersLostDay:ordersLostDay,gmvLostDay:gmvLostDay},
         newPickerCPO:store.orders>0?Math.round(tNewPC/store.orders*100)/100:null,
-        oldChCPO:tChs.old,newChCPO:tChs.nw,notes:[]});
+        oldChCPO:tChs.old,newChCPO:tChs.nw,notes:thNotes});
     }else if(canReduceAfterTrim&&!trimAddsOT){
       // trim doesn't add extra saving over headcount-only — suppress duplicate
     }else if(trimAddsOT&&!canReduceAfterTrim){
@@ -1962,6 +1920,41 @@ function calcAllOptions(store){
         notes:['Headcount at minimum — peak inside active window: '+peakInTrim+' orders/hr needs '+minPickersTrim+' pickers (threshold: '+utrThr+')']});
     }else{
       notViable.push({label:'Trim store hours',reason:'Trimming edges does not eliminate OT and headcount is already at minimum (peak: '+peakInTrim+' orders/hr, min '+minPickersTrim+' pickers needed)'});
+    }
+  }
+
+  // ── Staggered shift (split start times) ──
+  if(!timing||snOpen===null){
+    // no timing → already covered by "no hourly/timing data" note above
+  }else if(untrimHrs<=contractHrs){
+    notViable.push({label:'Staggered shifts (split start times)',reason:'Store hours ('+_fmtHalf(snOpen)+'–'+_fmtHalf(snClose)+', '+Math.round(untrimHrs*10)/10+' hrs) already fit within contract ('+contractHrs+' hrs) — no OT to eliminate'});
+  }else if(untrimHrs>=2*contractHrs){
+    notViable.push({label:'Staggered shifts (split start times)',reason:'Store is '+Math.round(untrimHrs*10)/10+' hrs — exceeds 2× contract ('+contractHrs+'). Split shifts need an overlap window; store is too long for this approach.'});
+  }else{
+    var p1Start=snOpen,p1End=snOpen+contractHrs;
+    var p2Start=snClose-contractHrs,p2End=snClose;
+    var overlapStart=p2Start,overlapEnd=p1End;
+    var peakHoursNeed2=[],staggerCoverageOK=true;
+    if(hourly){for(var hs=0;hs<24;hs++){if((hourly[hs]||0)>utrThr){peakHoursNeed2.push(hs);if(hs<overlapStart||hs>=overlapEnd)staggerCoverageOK=false;}}}
+    if(!staggerCoverageOK){
+      var uncovPeak=peakHoursNeed2.filter(function(hs){return hs<overlapStart||hs>=overlapEnd;});
+      notViable.push({label:'Staggered shifts (split start times)',reason:'Peak demand hour'+(uncovPeak.length>1?'s':'')+' '+uncovPeak.map(_fmtH).join(', ')+' (>'+utrThr+' orders/hr) fall outside the overlap window '+_fmtHalf(overlapStart)+'–'+_fmtHalf(overlapEnd)+' — both pickers must be present at those hours'});
+    }else{
+      var stagSavF=otCostFull(otUntrim,currentPickers);
+      var stagSavT=otCostThis(otUntrim,currentPickers);
+      options.push({id:'staggered_shift',
+        label:'Staggered shifts — Picker 1 from '+_fmtHalf(p1Start)+', Picker 2 from '+_fmtHalf(p2Start),
+        netFull:stagSavF,netThis:stagSavT,
+        breakdown:[{l:'Daily OT eliminated ('+otUntrim+' OT hrs × '+currentPickers+' pickers × '+wDays+' days/mo)',v:stagSavF,sign:1}],
+        changes:{pickers:'unchanged ('+currentPickers+')',hours:'Picker 1: '+_fmtHalf(p1Start)+'–'+_fmtHalf(p1End)+' | Picker 2: '+_fmtHalf(p2Start)+'–'+_fmtHalf(p2End),ot:otUntrim+' hrs → 0 (neither picker exceeds '+contractHrs+'-hr contract)'},
+        evidence:{snOpen:snOpen,snClose:snClose,contractHrs:contractHrs,
+          storeHrs:_fmtHalf(snOpen)+'–'+_fmtHalf(snClose),
+          p1Start:p1Start,p1End:p1End,p2Start:p2Start,p2End:p2End,
+          overlapStart:overlapStart,overlapEnd:overlapEnd,
+          otUntrim:otUntrim,peakHoursNeed2:peakHoursNeed2},
+        newPickerCPO:null,oldChCPO:null,newChCPO:null,
+        notes:['Both pickers work exactly '+contractHrs+' hrs each day — no daily OT. Overlap '+_fmtHalf(overlapStart)+'–'+_fmtHalf(overlapEnd)+' covers the busiest window. Day-off coverage cost (colleague covers full store hours alone when 1 is off) is unchanged from current.']
+      });
     }
   }
 
@@ -2010,6 +2003,12 @@ function renderWeeklySchedule(store){
   });
   h+='</table></div>';
   h+='<div style="font-size:10px;color:var(--muted);margin-top:8px">Pickers needed per hour, based on this store\'s typical hourly order curve applied to each day\'s actual operating hours (from store timing data) — day-to-day order volume differences aren\'t available in the source data yet, only day-to-day operating-hour differences are. "OT" = beyond this store\'s '+contractHrs+'-hr contract shift from opening.</div>';
+  h+='<div style="font-size:10px;color:var(--muted);margin-top:6px;display:flex;align-items:center;gap:10px;flex-wrap:wrap">'
+    +'<span><span style="background:#86efac;display:inline-block;width:10px;height:10px;border-radius:2px;margin-right:3px"></span>1 picker</span>'
+    +'<span><span style="background:#fca5a5;display:inline-block;width:10px;height:10px;border-radius:2px;margin-right:3px"></span>2+ pickers</span>'
+    +'<span><span style="background:#fde68a;display:inline-block;width:10px;height:10px;border-radius:2px;margin-right:3px"></span>OT zone</span>'
+    +'<span style="color:#64748b"><i class="fas fa-moon" style="margin-right:3px;color:#6366f1"></i>Day-off: ~1 weekday/wk per picker (Mon–Fri), rotated — on any weekday one picker may be absent; their colleague covers alone (hours beyond contract = OT)</span>'
+    +'</div>';
   return h;
 }
 
@@ -2116,10 +2115,25 @@ function renderStoreOptions(result){
           }
           h+='<div style="color:#374151"><i class="fas fa-calendar-minus" style="color:#0284c7;margin-right:5px;width:12px"></i>'+covLine+'</div>';
         }
-        var schedOpen=ev.adjOpen!=null?ev.adjOpen:ev.snOpen;
-        var schedClose=ev.adjClose!=null?ev.adjClose:ev.snClose;
-        if(schedOpen!=null&&ev.contractHrs&&ev.pickersAfter>0){
-          h+=_renderShiftSchedule(schedOpen,schedClose,ev.contractHrs,ev.pickersAfter,ev.peakHr);
+        if(opt.id==='staggered_shift'&&ev.p1Start!=null){
+          function _gpct(hr){return (hr/24*100).toFixed(2)+'%';}
+          function _gbar(s,e,col){return '<div style="position:absolute;left:'+_gpct(s)+';width:'+_gpct(e-s)+';top:0;bottom:0;background:'+col+';border-radius:3px"></div>';}
+          h+='<div style="margin-top:10px;padding-top:10px;border-top:1px dashed #bae6fd">';
+          h+='<div style="font-size:10px;font-weight:700;color:#0369a1;margin-bottom:8px;text-transform:uppercase;letter-spacing:.4px"><i class="fas fa-calendar-alt" style="margin-right:5px"></i>Proposed Shift Schedule</div>';
+          h+='<div style="font-size:10px;color:#475569;margin-bottom:3px">Picker 1</div>';
+          h+='<div style="position:relative;height:18px;background:#e2e8f0;border-radius:4px;margin-bottom:7px">'+_gbar(ev.p1Start,ev.p1End,'rgba(59,130,246,0.75)')+'</div>';
+          h+='<div style="font-size:10px;color:#475569;margin-bottom:3px">Picker 2</div>';
+          h+='<div style="position:relative;height:18px;background:#e2e8f0;border-radius:4px;margin-bottom:7px">'+_gbar(ev.p2Start,ev.p2End,'rgba(20,184,166,0.75)')+'</div>';
+          h+='<div style="position:relative;height:8px;background:transparent;margin-bottom:4px">'+_gbar(ev.overlapStart,ev.overlapEnd,'rgba(139,92,246,0.4)')+'</div>';
+          h+='<div style="display:flex;justify-content:space-between;font-size:9px;color:#94a3b8;margin-bottom:8px">';
+          for(var glh=0;glh<=24;glh+=4){h+='<span>'+glh+'h</span>';}
+          h+='</div>';
+          h+='<div style="display:flex;gap:12px;flex-wrap:wrap;font-size:10px;color:#374151">';
+          h+='<span><span style="background:rgba(59,130,246,0.75);display:inline-block;width:10px;height:10px;border-radius:2px;margin-right:3px;vertical-align:middle"></span>P1: '+_fmtHalf(ev.p1Start)+'–'+_fmtHalf(ev.p1End)+' ('+ev.contractHrs+' hrs)</span>';
+          h+='<span><span style="background:rgba(20,184,166,0.75);display:inline-block;width:10px;height:10px;border-radius:2px;margin-right:3px;vertical-align:middle"></span>P2: '+_fmtHalf(ev.p2Start)+'–'+_fmtHalf(ev.p2End)+' ('+ev.contractHrs+' hrs)</span>';
+          h+='<span><span style="background:rgba(139,92,246,0.4);display:inline-block;width:10px;height:10px;border-radius:2px;margin-right:3px;vertical-align:middle"></span>Both present: '+_fmtHalf(ev.overlapStart)+'–'+_fmtHalf(ev.overlapEnd)+'</span>';
+          h+='</div>';
+          h+='</div>';
         }
         h+='</div>';
       }
@@ -2190,7 +2204,6 @@ function renderOptimizerView(){
   var selChain2=APP._optChain||'All Chains';
   var baseList=APP._optShowAll?all.slice().sort(function(a,b){return (b.pickerCPO||b.loadedCPO||0)-(a.pickerCPO||a.loadedCPO||0);}):flagged;
   var displayStores=selChain2==='All Chains'?baseList:baseList.filter(function(r){return r.chain===selChain2;});
-  APP._optDisplayStores=displayStores;
   if(!displayStores.length){h+='<div class="empty-state"><p>No stores above threshold. Lower the action threshold in Settings → Optimizer.</p></div></div>';document.getElementById('mainContent').innerHTML=h;return;}
 
   displayStores.forEach(function(store,idx){
@@ -2228,15 +2241,15 @@ function renderOptimizerView(){
     if(sPeak>0){h+='<div style="text-align:center"><div style="font-size:10px;color:var(--muted)">Peak</div><div style="font-size:12px;font-weight:600">'+_fmtH(sPeakH)+' = '+Math.round(sPeak*10)/10+'</div></div>';}
     var topOpt=optResult.options[0];
     if(topOpt&&topOpt.netFull>0)h+='<div style="text-align:center"><div style="font-size:10px;color:#059669">Best saving</div><div style="font-size:14px;font-weight:700;color:#059669">'+_getCurrency()+' '+fmt(topOpt.netFull)+'/mo</div></div>';
-    h+='<div style="text-align:center"><button class="btn btn-sm btn-outline" style="font-size:10px;padding:4px 8px" onclick="event.stopPropagation();toggleWeeklySchedule('+idx+')"><i class="fas fa-calendar-week" style="margin-right:4px"></i>Weekly Schedule</button></div>';
     h+='</div></div>';
 
-    // Options (collapsible)
+    // Options (collapsible) — weekly schedule shown first, then the ranked options
     h+='<div id="os'+idx+'" style="display:none;padding:14px 16px">';
+    h+='<div style="font-size:12px;font-weight:700;color:var(--muted);text-transform:uppercase;letter-spacing:.5px;margin-bottom:8px"><i class="fas fa-calendar-week" style="margin-right:5px"></i>Weekly Staffing Schedule</div>';
+    h+=renderWeeklySchedule(store);
+    h+='<div style="border-top:1px solid var(--border);margin:16px 0"></div>';
     h+=renderStoreOptions(optResult);
-    h+='</div>';
-    h+='<div id="wk'+idx+'" style="display:none;padding:14px 16px;border-top:1px solid var(--border)"></div>';
-    h+='</div>'; // close store card
+    h+='</div></div>'; // close store body, store card
   });
 
   h+='</div>';
@@ -2250,19 +2263,6 @@ function toggleOptStore(id){
   var open=el.style.display==='none'||el.style.display==='';
   el.style.display=open?'block':'none';
   if(chev)chev.style.transform=open?'rotate(180deg)':'';
-}
-function toggleWeeklySchedule(idx){
-  var el=document.getElementById('wk'+idx); if(!el)return;
-  if(el.style.display==='none'||el.style.display===''){
-    if(!el.dataset.rendered){
-      var store=(APP._optDisplayStores||[])[idx];
-      if(store)el.innerHTML=renderWeeklySchedule(store);
-      el.dataset.rendered='1';
-    }
-    el.style.display='block';
-  }else{
-    el.style.display='none';
-  }
 }
 
 // ================================================================
