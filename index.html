@@ -305,8 +305,10 @@ if(typeof google==='undefined'||!google.script||window.location.hostname.indexOf
   // Build the google.script.run shim
   window.google={script:{run:{}}};
   (function(){
-    var _successHandler=null,_failureHandler=null;
     function makeRunner(){
+      // Each runner gets its own isolated handlers — shared state caused the
+      // outer handler's cleanup to wipe the inner handler before it could fire
+      var _successHandler=null,_failureHandler=null;
       var runner={};
       // withSuccessHandler/withFailureHandler must return the Proxy (not the plain runner)
       // so that chaining .withSuccessHandler(...).withFailureHandler(...).methodName() works
