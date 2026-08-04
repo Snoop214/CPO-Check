@@ -412,12 +412,15 @@ def compute_cpo(period, date_index, orders, attend, master, cfg, is_mtd=False):
         nm = normalize_dept(r.get('vendorName', ''))
         vr = resolve_effective_rate(vendor_rates, month, year, nm)
         if vr and nm not in vendor_map:
+            ot_m = vr.get('otMultiplier', 1.5)
             vendor_map[nm] = {
-                'rate':          vr.get('baseRate', 2750),
-                'hours':         vr.get('hoursPerDay', 10),
-                'ot_mult':       vr.get('otMultiplier', 1.5),
-                'ramadan_hours': vr.get('ramadanHours', vr.get('hoursPerDay', 10)),
-                'ramadan_ot':    vr.get('ramadanOT', False),
+                'rate':           vr.get('baseRate', 2750),
+                'hours':          vr.get('hoursPerDay', 10),
+                'ot_mult':        ot_m,
+                'ramadan_hours':  vr.get('ramadanHours', vr.get('hoursPerDay', 10)),
+                'ramadan_ot':     vr.get('ramadanOT', False),
+                'holiday_ot':     vr.get('holidayOT', True),
+                'holiday_ot_mult': vr.get('holidayOTMult', ot_m),
             }
 
     attend_date_map = {d: i for i, d in enumerate(attend_dates)}
@@ -516,7 +519,7 @@ def compute_cpo(period, date_index, orders, attend, master, cfg, is_mtd=False):
                 if total_p > 0:
                     daily_rate = rate / work_days
                     ot_mult    = vm.get('ot_mult', 1.5)
-                    hol_extra  = hol_days * daily_rate * (ot_mult - 1)
+                    hol_extra  = hol_days * daily_rate * (vm.get('holiday_ot_mult', ot_mult) - 1) if vm.get('holiday_ot', True) else 0
                     ram_extra  = 0
                     if ram_days > 0 and vm.get('ramadan_ot'):
                         r_hrs     = vm.get('ramadan_hours', v_hours)

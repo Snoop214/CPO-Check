@@ -1542,7 +1542,7 @@ function _getStoreHourly(vendorId){
 function _sumH(h,from,to){var s=0;for(var i=from;i<to&&i<24;i++)s+=(h[i]||0);return s;}
 function _fmtH(h){if(h===0||h===24)return'12am';if(h===12)return'12pm';return h<12?h+'am':(h-12)+'pm';}
 function _fmtHalf(h){
-  var whole=Math.floor(h),half=h%1>=0.5;
+  var whole=Math.floor(h)%24,half=h%1>=0.5;
   var label=whole===0?'12':(whole<=12?String(whole):String(whole-12));
   var suffix=whole<12?'am':'pm';
   if(whole===12)suffix='pm';
@@ -3069,21 +3069,26 @@ function renderRatesTab(){
   h+='<div class="form-group"><label>Holiday &amp; OT Mult</label><input id="rOTMult" type="number" placeholder="1.5" min="1" max="3" step="0.1" value="1.5"></div>';
   h+='<div class="form-group"><label>Ramadan Hrs/Day</label><input id="rRamHours" type="number" placeholder="9" min="1" max="24"></div>';
   h+='<div class="form-group" style="justify-content:flex-end;align-items:center;gap:6px;flex-direction:row"><input id="rRamOT" type="checkbox" style="width:16px;height:16px"><label for="rRamOT" style="margin:0;cursor:pointer">Ramadan OT?</label></div>';
+  h+='<div class="form-group"><label>Holiday OT Mult</label><input id="rHolMult" type="number" placeholder="1.5" min="1" max="5" step="0.1" value="1.5"></div>';
+  h+='<div class="form-group" style="justify-content:flex-end;align-items:center;gap:6px;flex-direction:row"><input id="rHolOT" type="checkbox" style="width:16px;height:16px" checked><label for="rHolOT" style="margin:0;cursor:pointer">Holiday OT?</label></div>';
   h+='<div class="form-group"><label>Start Month</label><input id="rStartM" type="number" min="1" max="12" value="1"></div>';
   h+='<div class="form-group"><label>Start Year</label><input id="rStartY" type="number" value="2025"></div>';
   h+='<div style="align-self:flex-end"><button class="btn btn-primary btn-sm" id="rAddBtn" onclick="addRate()"><i class="fas fa-plus"></i> Add</button></div></div>';
-  h+='<table class="cfg-table"><tr><th>Vendor</th><th>Rate (AED)</th><th>Contract Hrs</th><th>Holiday+OT Mult</th><th>Ramadan Hrs</th><th>Ram.OT?</th><th>From</th><th></th></tr>';
+  h+='<table class="cfg-table"><tr><th>Vendor</th><th>Rate (AED)</th><th>Contract Hrs</th><th>OT Mult</th><th>Hol OT?</th><th>Hol OT Mult</th><th>Ramadan Hrs</th><th>Ram.OT?</th><th>From</th><th></th></tr>';
   rates.forEach(function(r){
     var ramH=r.ramadanHours||(r.hoursPerDay||10);
     var ramOT=r.ramadanOT?'<i class="fas fa-check" style="color:var(--primary)"></i>':'—';
+    var holOT=(r.holidayOT===undefined||r.holidayOT)?'<i class="fas fa-check" style="color:var(--primary)"></i>':'—';
+    var holM=r.holidayOTMult||r.otMultiplier||1.5;
     h+='<tr>';
     h+='<td>'+r.vendorName+'</td><td>'+fmt(r.baseRate)+'</td>';
     h+='<td>'+(r.hoursPerDay||10)+' hrs</td>';
     h+='<td>'+(r.otMultiplier||1.5)+'×</td>';
+    h+='<td>'+holOT+'</td><td>'+holM+'×</td>';
     h+='<td>'+ramH+' hrs</td><td>'+ramOT+'</td>';
     h+='<td>'+r.effectiveStartMonth+'/'+r.effectiveStartYear+'</td>';
     h+='<td style="display:flex;gap:4px">';
-    h+='<button class="btn btn-sm btn-outline" onclick="editRate(\''+r.id+'\',\''+r.vendorName+'\','+r.baseRate+','+(r.hoursPerDay||10)+','+(r.otMultiplier||1.5)+','+ramH+','+(r.ramadanOT?1:0)+','+r.effectiveStartMonth+','+r.effectiveStartYear+')" title="Edit"><i class="fas fa-edit"></i></button>';
+    h+='<button class="btn btn-sm btn-outline" onclick="editRate(\''+r.id+'\',\''+r.vendorName+'\','+r.baseRate+','+(r.hoursPerDay||10)+','+(r.otMultiplier||1.5)+','+ramH+','+(r.ramadanOT?1:0)+','+r.effectiveStartMonth+','+r.effectiveStartYear+','+(r.holidayOT===undefined||r.holidayOT?1:0)+','+(r.holidayOTMult||r.otMultiplier||1.5)+')" title="Edit"><i class="fas fa-edit"></i></button>';
     h+='<button class="btn btn-sm btn-outline" onclick="deleteRate(\''+r.id+'\')" title="Delete"><i class="fas fa-trash"></i></button>';
     h+='</td></tr>';
   });
@@ -3096,6 +3101,8 @@ function addRate(){
     otMultiplier:parseFloat(document.getElementById('rOTMult').value)||1.5,
     ramadanHours:parseFloat(document.getElementById('rRamHours').value)||parseFloat(document.getElementById('rHours').value)||10,
     ramadanOT:document.getElementById('rRamOT').checked,
+    holidayOT:document.getElementById('rHolOT').checked,
+    holidayOTMult:parseFloat(document.getElementById('rHolMult').value)||1.5,
     effectiveStartMonth:parseInt(document.getElementById('rStartM').value)||1,
     effectiveStartYear:parseInt(document.getElementById('rStartY').value)||2025,
     effectiveEndMonth:null,effectiveEndYear:null};
@@ -3103,13 +3110,15 @@ function addRate(){
   google.script.run.withSuccessHandler(function(r){APP.config.vendor_rates=r;renderSettingsTab('rates');showToast('Rate added','success');}).addConfigEntry('vendor_rates',e);
 }
 function deleteRate(id){google.script.run.withSuccessHandler(function(r){APP.config.vendor_rates=r;renderSettingsTab('rates');showToast('Deleted','success');}).deleteConfigEntry('vendor_rates',id);}
-function editRate(id,name,rate,hours,otMult,ramH,ramOT,month,year){
+function editRate(id,name,rate,hours,otMult,ramH,ramOT,month,year,holOT,holMult){
   document.getElementById('rVendor').value=name;
   document.getElementById('rRate').value=rate;
   document.getElementById('rHours').value=hours;
   document.getElementById('rOTMult').value=otMult||1.5;
   document.getElementById('rRamHours').value=ramH||hours;
   document.getElementById('rRamOT').checked=ramOT===1||ramOT===true;
+  document.getElementById('rHolOT').checked=holOT===undefined||holOT===1||holOT===true;
+  document.getElementById('rHolMult').value=holMult||otMult||1.5;
   document.getElementById('rStartM').value=month;
   document.getElementById('rStartY').value=year;
   var btn=document.getElementById('rAddBtn');
@@ -3120,7 +3129,9 @@ function updateRate(id){
     hoursPerDay:parseFloat(document.getElementById('rHours').value)||10,
     otMultiplier:parseFloat(document.getElementById('rOTMult').value)||1.5,
     ramadanHours:parseFloat(document.getElementById('rRamHours').value)||parseFloat(document.getElementById('rHours').value)||10,
-    ramadanOT:document.getElementById('rRamOT').checked};
+    ramadanOT:document.getElementById('rRamOT').checked,
+    holidayOT:document.getElementById('rHolOT').checked,
+    holidayOTMult:parseFloat(document.getElementById('rHolMult').value)||1.5};
   if(!fields.baseRate){showToast('Enter valid rate','error');return;}
   google.script.run.withSuccessHandler(function(r){APP.config.vendor_rates=r;renderSettingsTab('rates');showToast('Rate updated','success');}).updateConfigEntry('vendor_rates',id,fields);
 }

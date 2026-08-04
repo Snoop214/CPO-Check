@@ -11,7 +11,9 @@
       "effectiveEndYear": null,
       "otMultiplier": 1.5,
       "ramadanHours": 10,
-      "ramadanOT": false
+      "ramadanOT": false,
+      "holidayOT": true,
+      "holidayOTMult": 1.5
     },
     {
       "id": "vr_transguard",
@@ -24,7 +26,9 @@
       "effectiveEndYear": null,
       "otMultiplier": 1.5,
       "ramadanHours": 10,
-      "ramadanOT": false
+      "ramadanOT": false,
+      "holidayOT": true,
+      "holidayOTMult": 1.5
     },
     {
       "id": "vr_wesource",
@@ -37,7 +41,9 @@
       "effectiveEndYear": null,
       "otMultiplier": 1.5,
       "ramadanHours": 10,
-      "ramadanOT": false
+      "ramadanOT": false,
+      "holidayOT": true,
+      "holidayOTMult": 1.5
     },
     {
       "id": "vr_zone",
@@ -50,7 +56,9 @@
       "effectiveEndYear": null,
       "otMultiplier": 1.5,
       "ramadanHours": 10,
-      "ramadanOT": false
+      "ramadanOT": false,
+      "holidayOT": true,
+      "holidayOTMult": 1.5
     },
     {
       "id": "vr_trumax",
@@ -63,7 +71,9 @@
       "effectiveEndYear": null,
       "otMultiplier": 1.5,
       "ramadanHours": 10,
-      "ramadanOT": false
+      "ramadanOT": false,
+      "holidayOT": true,
+      "holidayOTMult": 1.5
     },
     {
       "id": "vr_sanket",
@@ -76,7 +86,9 @@
       "effectiveEndYear": null,
       "otMultiplier": 1.5,
       "ramadanHours": 10,
-      "ramadanOT": false
+      "ramadanOT": false,
+      "holidayOT": true,
+      "holidayOTMult": 1.5
     },
     {
       "id": "vr_mtm",
@@ -89,7 +101,9 @@
       "effectiveEndYear": null,
       "otMultiplier": 1.5,
       "ramadanHours": 10,
-      "ramadanOT": false
+      "ramadanOT": false,
+      "holidayOT": true,
+      "holidayOTMult": 1.5
     },
     {
       "id": "vr_jumbo",
@@ -102,7 +116,9 @@
       "effectiveEndYear": null,
       "otMultiplier": 1.5,
       "ramadanHours": 10,
-      "ramadanOT": false
+      "ramadanOT": false,
+      "holidayOT": true,
+      "holidayOTMult": 1.5
     }
   ],
   "employee_costs": [
