@@ -117,7 +117,7 @@
       "otMultiplier": 1.5,
       "ramadanHours": 10,
       "ramadanOT": false,
-      "holidayOT": true,
+      "holidayOT": false,
       "holidayOTMult": 1.5
     }
   ],
