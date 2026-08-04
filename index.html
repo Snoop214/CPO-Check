@@ -1792,7 +1792,7 @@ function calcAllOptions(store){
   var minPickersTheoretical=peakOrders>0?Math.max(1,Math.ceil(peakOrders/utrThr)):1;
   // Never suggest cutting more than 1 picker at a time, even if peak capacity math would allow more —
   // re-evaluate after each step rather than jumping straight to a theoretical minimum.
-  var minPickers=Math.max(minPickersTheoretical,currentPickers-1);
+  var minPickers=Math.max(minPickersTheoretical,currentPickers-1,2);
   var singlePickerViable=peakHr<0?null:(peakOrders<=utrThr); // Phase 2: can 1 picker handle peak? null = no hourly data to judge from
   var canReduceHead=currentPickers>minPickers;
   var pickersReduced=Math.max(0,currentPickers-minPickers);
@@ -1812,8 +1812,8 @@ function calcAllOptions(store){
   }
 
   // ── Headcount reduction only ──
-  if(currentPickers<=1){
-    notViable.push({label:'Reduce headcount',reason:'Already at 1 picker'});
+  if(currentPickers<=2){
+    notViable.push({label:'Reduce headcount',reason:'Already at minimum 2 pickers (policy floor — every store must have at least 2)'});
   }else if(!canReduceHead){
     notViable.push({label:'Reduce headcount',reason:peakHr>=0?'Peak hour '+_fmtH(peakHr)+' has '+Math.round(peakOrders*10)/10+' avg orders — min '+minPickers+' pickers needed at UTR '+utrThr+', already at '+currentPickers:'No hourly data — min pickers estimated at '+minPickers+', already at '+currentPickers});
   }else{
@@ -1857,7 +1857,7 @@ function calcAllOptions(store){
     var peakInTrim=0;
     if(adjOpen!=null){for(var ht=Math.floor(adjOpen);ht<Math.ceil(adjClose);ht++){if((hourly[ht]||0)>peakInTrim)peakInTrim=hourly[ht];}}
     var minPickersTrimTheoretical=peakInTrim>0?Math.max(1,Math.ceil(peakInTrim/utrThr)):1;
-    var minPickersTrim=Math.max(minPickersTrimTheoretical,currentPickers-1);
+    var minPickersTrim=Math.max(minPickersTrimTheoretical,currentPickers-1,2);
     var canReduceAfterTrim=currentPickers>minPickersTrim;
     var pickersReducedTrim=Math.max(0,currentPickers-minPickersTrim);
     var trimParts=[];
@@ -1943,11 +1943,11 @@ function calcAllOptions(store){
       var stagSavF=otCostFull(otUntrim,currentPickers);
       var stagSavT=otCostThis(otUntrim,currentPickers);
       options.push({id:'staggered_shift',
-        label:'Staggered shifts — Picker 1 from '+_fmtHalf(p1Start)+', Picker 2 from '+_fmtHalf(p2Start),
+        label:'Staggered shifts — Picker 1 from '+_fmtHalf(p1Start)+', Picker '+(currentPickers>2?'2+':'2')+' from '+_fmtHalf(p2Start),
         netFull:stagSavF,netThis:stagSavT,
         breakdown:[{l:'Daily OT eliminated ('+otUntrim+' OT hrs × '+currentPickers+' pickers × '+wDays+' days/mo)',v:stagSavF,sign:1}],
         changes:{pickers:'unchanged ('+currentPickers+')',hours:'Picker 1: '+_fmtHalf(p1Start)+'–'+_fmtHalf(p1End)+' | Picker 2: '+_fmtHalf(p2Start)+'–'+_fmtHalf(p2End),ot:otUntrim+' hrs → 0 (neither picker exceeds '+contractHrs+'-hr contract)'},
-        evidence:{snOpen:snOpen,snClose:snClose,contractHrs:contractHrs,
+        evidence:{snOpen:snOpen,snClose:snClose,contractHrs:contractHrs,currentPickers:currentPickers,
           storeHrs:_fmtHalf(snOpen)+'–'+_fmtHalf(snClose),
           p1Start:p1Start,p1End:p1End,p2Start:p2Start,p2End:p2End,
           overlapStart:overlapStart,overlapEnd:overlapEnd,
@@ -2012,7 +2012,61 @@ function renderWeeklySchedule(store){
   return h;
 }
 
-function renderStoreOptions(result){
+function renderProposedRoster(store,opt){
+  var ev=opt.evidence||{};
+  var contractHrs=ev.contractHrs;
+  var byDay=_getStoreWeeklyTiming(store.vendorId);
+  // Determine picker count and shift windows
+  var nPickers,earlyShift,lateShift;
+  if(opt.id==='staggered_shift'){
+    if(ev.p1Start==null)return '';
+    nPickers=ev.currentPickers||store.maxDailyPickers||store.pickerCount||2;
+    earlyShift={start:ev.p1Start,end:ev.p1End};
+    lateShift={start:ev.p2Start,end:ev.p2End};
+  }else if(ev.snOpen!=null&&contractHrs!=null){
+    nPickers=ev.pickersAfter||ev.minPickersTrim||(store.maxDailyPickers||store.pickerCount||1);
+    var adjO=ev.adjOpen!=null?ev.adjOpen:ev.snOpen;
+    earlyShift={start:adjO,end:adjO+contractHrs};
+    lateShift=earlyShift;
+  }else{return '';}
+  var DLBL=['Mon','Tue','Wed','Thu','Fri','Sat','Sun'];
+  var DFULL=['Monday','Tuesday','Wednesday','Thursday','Friday','Saturday','Sunday'];
+  var h='<div style="margin-top:10px;padding-top:10px;border-top:1px dashed #bae6fd">';
+  h+='<div style="font-size:10px;font-weight:700;color:#0369a1;margin-bottom:8px;text-transform:uppercase;letter-spacing:.4px"><i class="fas fa-table" style="margin-right:5px"></i>Proposed Weekly Roster</div>';
+  h+='<div style="overflow-x:auto"><table style="border-collapse:collapse;font-size:10px;min-width:100%">';
+  h+='<tr><th style="padding:5px 8px;background:#1e293b;color:#fff;font-weight:600;text-align:left;white-space:nowrap">Position</th>';
+  DLBL.forEach(function(d,di){h+='<th style="padding:5px 6px;background:'+(di>=5?'#334155':'#1e293b')+';color:#fff;text-align:center;white-space:nowrap">'+d+'</th>';});
+  h+='<th style="padding:5px 6px;background:#1e293b;color:#94a3b8;text-align:center;font-size:9px;white-space:nowrap">Daily OT</th></tr>';
+  for(var p=0;p<nPickers;p++){
+    var isLate=(opt.id==='staggered_shift')&&p>0;
+    var dayOffIdx=p%5;
+    h+='<tr><td style="padding:4px 8px;font-weight:600;color:#1e293b;background:#f8fafc;white-space:nowrap;border:1px solid #e2e8f0">Picker '+(p+1)+'</td>';
+    DLBL.forEach(function(d,di){
+      var isOff=di<5&&di===dayOffIdx;
+      if(isOff){h+='<td style="padding:4px 6px;background:#fca5a5;color:#991b1b;font-weight:700;text-align:center;border:1px solid #fff;white-space:nowrap">OFF</td>';return;}
+      var win=byDay?byDay[DFULL[di]]:null;
+      var dayOpen,dayClose;
+      if(win&&win.closeHr>0&&win.closeHr>win.openHr){dayOpen=_snapHalf(win.openHr,'up');dayClose=_snapHalf(win.closeHr,'down');}
+      else if(ev.snOpen!=null){dayOpen=ev.snOpen;dayClose=ev.snClose;}
+      else{h+='<td style="padding:4px 6px;background:#f8fafc;color:#94a3b8;text-align:center;border:1px solid #f1f5f9">—</td>';return;}
+      var sS,sE;
+      if(isLate){sE=dayClose;sS=dayClose-contractHrs;}
+      else{sS=dayOpen;sE=dayOpen+contractHrs;}
+      var timeStr=_fmtHalf(sS)+'–'+_fmtHalf(sE);
+      var bg=isLate?'#e0f2fe':'#f0fdf4';
+      var fg=isLate?'#0369a1':'#065f46';
+      h+='<td style="padding:4px 6px;background:'+bg+';color:'+fg+';text-align:center;border:1px solid #e2e8f0;white-space:nowrap">'+timeStr+'</td>';
+    });
+    h+='<td style="padding:4px 6px;color:#059669;font-weight:700;text-align:center;border:1px solid #e2e8f0;white-space:nowrap">0 hrs</td></tr>';
+  }
+  h+='</table></div>';
+  h+='<div style="font-size:9px;color:#64748b;margin-top:4px"><i class="fas fa-info-circle" style="margin-right:3px"></i>';
+  if(opt.id==='staggered_shift')h+='Picker 1 starts at store open (early shift). Picker 2+ end at store close (late shift). ';
+  h+='Day-off rotates Mon→Tue→Wed… (1 weekday off per picker per week, illustrative). Sat–Sun all pickers work.</div></div>';
+  return h;
+}
+
+function renderStoreOptions(result,store){
   var cur=_getCurrency();
   var opts=result.options,nv=result.notViable,h='';
   if(!opts.length){
@@ -2137,6 +2191,7 @@ function renderStoreOptions(result){
         }
         h+='</div>';
       }
+      if(store)h+=renderProposedRoster(store,opt);
       h+='</div>';
     });
     h+='</div>';
@@ -2248,7 +2303,7 @@ function renderOptimizerView(){
     h+='<div style="font-size:12px;font-weight:700;color:var(--muted);text-transform:uppercase;letter-spacing:.5px;margin-bottom:8px"><i class="fas fa-calendar-week" style="margin-right:5px"></i>Weekly Staffing Schedule</div>';
     h+=renderWeeklySchedule(store);
     h+='<div style="border-top:1px solid var(--border);margin:16px 0"></div>';
-    h+=renderStoreOptions(optResult);
+    h+=renderStoreOptions(optResult,store);
     h+='</div></div>'; // close store body, store card
   });
 
@@ -2946,18 +3001,18 @@ function confirmClearLog(){
 function renderRatesTab(){
   var rates=APP.config.vendor_rates||[];
   var h='<div class="s-title"><i class="fas fa-tags" style="color:var(--primary);margin-right:7px"></i>Vendor Rates & Working Hours</div>';
-  h+='<p style="font-size:12px;color:var(--muted);margin-bottom:12px">Contract hours/day = used for UTR and OT base. OT multiplier = UAE Labour Law default 1.5×. Ramadan hours = actual shift during Ramadan; tick OT if those hours exceed contract hours.</p>';
+  h+='<p style="font-size:12px;color:var(--muted);margin-bottom:12px">Contract hours/day = used for UTR and OT base. <b>Holiday &amp; OT Multiplier</b> = applies on public holidays <i>and</i> Ramadan (UAE Labour Law default 1.5×). Ramadan hours = actual shift during Ramadan; tick OT if those hours exceed contract hours.</p>';
   h+='<div class="form-row" style="flex-wrap:wrap">';
   h+='<div class="form-group"><label>Vendor</label><input id="rVendor" placeholder="e.g. KRH"></div>';
   h+='<div class="form-group"><label>Base Rate (AED/mo)</label><input id="rRate" type="number" placeholder="2750"></div>';
   h+='<div class="form-group"><label>Contract Hrs/Day</label><input id="rHours" type="number" placeholder="11" min="1" max="24"></div>';
-  h+='<div class="form-group"><label>OT Multiplier</label><input id="rOTMult" type="number" placeholder="1.5" min="1" max="3" step="0.1" value="1.5"></div>';
+  h+='<div class="form-group"><label>Holiday &amp; OT Mult</label><input id="rOTMult" type="number" placeholder="1.5" min="1" max="3" step="0.1" value="1.5"></div>';
   h+='<div class="form-group"><label>Ramadan Hrs/Day</label><input id="rRamHours" type="number" placeholder="9" min="1" max="24"></div>';
   h+='<div class="form-group" style="justify-content:flex-end;align-items:center;gap:6px;flex-direction:row"><input id="rRamOT" type="checkbox" style="width:16px;height:16px"><label for="rRamOT" style="margin:0;cursor:pointer">Ramadan OT?</label></div>';
   h+='<div class="form-group"><label>Start Month</label><input id="rStartM" type="number" min="1" max="12" value="1"></div>';
   h+='<div class="form-group"><label>Start Year</label><input id="rStartY" type="number" value="2025"></div>';
   h+='<div style="align-self:flex-end"><button class="btn btn-primary btn-sm" id="rAddBtn" onclick="addRate()"><i class="fas fa-plus"></i> Add</button></div></div>';
-  h+='<table class="cfg-table"><tr><th>Vendor</th><th>Rate (AED)</th><th>Contract Hrs</th><th>OT Mult</th><th>Ramadan Hrs</th><th>OT?</th><th>From</th><th></th></tr>';
+  h+='<table class="cfg-table"><tr><th>Vendor</th><th>Rate (AED)</th><th>Contract Hrs</th><th>Holiday+OT Mult</th><th>Ramadan Hrs</th><th>Ram.OT?</th><th>From</th><th></th></tr>';
   rates.forEach(function(r){
     var ramH=r.ramadanHours||(r.hoursPerDay||10);
     var ramOT=r.ramadanOT?'<i class="fas fa-check" style="color:var(--primary)"></i>':'—';
@@ -3140,7 +3195,7 @@ function renderWorkdaysTab(){
   // --- Public Holidays (standalone) ---
   var allHolidays=Array.isArray(APP.holidays)?APP.holidays:[];
   h+='<div class="s-title" style="margin-top:16px"><i class="fas fa-star" style="color:#d97706;margin-right:7px"></i>Public Holidays</div>';
-  h+='<p style="font-size:12px;color:var(--muted);margin-bottom:12px">Pickers who work on a holiday get OT pay (daily rate × OT multiplier − regular pay). Select country to pre-fill common holiday names, then confirm the government-announced date.</p>';
+  h+='<p style="font-size:12px;color:var(--muted);margin-bottom:12px">Pickers who work on a public holiday get OT pay: daily rate × <b>Holiday &amp; OT Multiplier</b> (set in Vendor Rates, default 1.5×). Champion salaries are fixed — no holiday premium on champion/supervisor allocation. Select country to pre-fill common holidays, then confirm the government-announced date.</p>';
 
   // Add holiday form
   h+='<div style="background:var(--card);border:1.5px solid var(--border);border-radius:var(--radius);padding:14px;margin-bottom:14px">';
