@@ -2034,8 +2034,18 @@ function renderProposedRoster(store,opt){
   }else{return '';}
   var DLBL=['Mon','Tue','Wed','Thu','Fri','Sat','Sun'];
   var DFULL=['Monday','Tuesday','Wednesday','Thursday','Friday','Saturday','Sunday'];
+  // Determine effective open/close (use trimmed adj values if available)
+  var effOpen=ev.adjOpen!=null?ev.adjOpen:ev.snOpen;
+  var effClose=ev.adjClose!=null?ev.adjClose:ev.snClose;
+  // Only stagger if the store window exceeds contract hours AND there are 2+ pickers
+  var storeWindow=effOpen!=null&&effClose!=null?effClose-effOpen:null;
+  var needsStagger=contractHrs!=null&&storeWindow!=null&&storeWindow>contractHrs&&nPickers>1;
   var h='<div style="margin-top:10px;padding-top:10px;border-top:1px dashed #bae6fd">';
-  h+='<div style="font-size:10px;font-weight:700;color:#0369a1;margin-bottom:8px;text-transform:uppercase;letter-spacing:.4px"><i class="fas fa-table" style="margin-right:5px"></i>Proposed Weekly Roster</div>';
+  h+='<div style="display:flex;align-items:baseline;gap:10px;margin-bottom:8px">'
+    +'<div style="font-size:10px;font-weight:700;color:#0369a1;text-transform:uppercase;letter-spacing:.4px"><i class="fas fa-table" style="margin-right:5px"></i>Proposed Weekly Roster</div>'
+    +'<span style="font-size:9px;background:#dcfce7;color:#166534;padding:1px 7px;border-radius:10px;font-weight:600">Proposed — after this change</span>'
+    +(needsStagger?'<span style="font-size:9px;color:#64748b">Staggered: Picker 1 early, last picker late</span>':'<span style="font-size:9px;color:#64748b">Same shift — store window fits in contract hrs</span>')
+    +'</div>';
   h+='<div style="overflow-x:auto"><table style="border-collapse:collapse;font-size:10px;min-width:100%">';
   h+='<tr><th style="padding:5px 8px;background:#1e293b;color:#fff;font-weight:600;text-align:left;white-space:nowrap">Position</th>';
   DLBL.forEach(function(d,di){h+='<th style="padding:5px 6px;background:'+(di>=5?'#334155':'#1e293b')+';color:#fff;text-align:center;white-space:nowrap">'+d+'</th>';});
@@ -2048,9 +2058,9 @@ function renderProposedRoster(store,opt){
     return sb-sa;
   });
   for(var p=0;p<nPickers;p++){
-    // First picker = early (store open → +contractHrs); last picker = late (store close − contractHrs → close)
-    // For staggered_shift all non-first pickers are late; for other options only the last one is
-    var isLate=opt.id==='staggered_shift'?p>0:(p===nPickers-1&&nPickers>1);
+    // staggered_shift: all non-first pickers take late shift (evidence has explicit p2Start)
+    // other options: last picker late only when store window > contractHrs (needsStagger)
+    var isLate=opt.id==='staggered_shift'?p>0:(p===nPickers-1&&needsStagger);
     var dayOffIdx=p%5;
     var pk=sortedPickers[p];
     var pkLabel=pk&&pk.name?pk.name:'Picker '+(p+1);
@@ -2064,9 +2074,15 @@ function renderProposedRoster(store,opt){
       if(win&&win.closeHr>0&&win.closeHr>win.openHr){dayOpen=_snapHalf(win.openHr,'up');dayClose=_snapHalf(win.closeHr,'down');}
       else if(ev.snOpen!=null){dayOpen=ev.snOpen;dayClose=ev.snClose;}
       else{h+='<td style="padding:4px 6px;background:#f8fafc;color:#94a3b8;text-align:center;border:1px solid #f1f5f9">—</td>';return;}
+      // Apply trim adjustment: move open later / close earlier for trim options
+      if(ev.adjOpen!=null)dayOpen=Math.max(dayOpen,ev.adjOpen);
+      if(ev.adjClose!=null)dayClose=Math.min(dayClose,ev.adjClose);
+      if(dayClose<=dayOpen){h+='<td style="padding:4px 6px;background:#f8fafc;color:#94a3b8;text-align:center;border:1px solid #f1f5f9">closed</td>';return;}
+      // shiftHrs: picker works the store window if it's shorter than their contract
+      var shiftHrs=Math.min(contractHrs,dayClose-dayOpen);
       var sS,sE;
-      if(isLate){sE=dayClose;sS=dayClose-contractHrs;}
-      else{sS=dayOpen;sE=dayOpen+contractHrs;}
+      if(isLate){sE=dayClose;sS=dayClose-shiftHrs;}
+      else{sS=dayOpen;sE=dayOpen+shiftHrs;}
       var timeStr=_fmtHalf(sS)+'–'+_fmtHalf(sE);
       var bg=isLate?'#e0f2fe':'#f0fdf4';
       var fg=isLate?'#0369a1':'#065f46';
@@ -2076,7 +2092,8 @@ function renderProposedRoster(store,opt){
   }
   h+='</table></div>';
   h+='<div style="font-size:9px;color:#64748b;margin-top:4px"><i class="fas fa-info-circle" style="margin-right:3px"></i>';
-  if(nPickers>1)h+='Picker 1 = early shift (from store open). Last picker = late shift (ends at store close). Together they cover the full window with no overlap OT. ';
+  if(needsStagger)h+='Store window ('+_fmtHalf(effOpen)+'–'+_fmtHalf(effClose)+') exceeds contract hrs — Picker 1 starts at open, last picker ends at close, overlap covers peak. ';
+  else if(storeWindow!=null)h+='Store window ('+_fmtHalf(effOpen)+'–'+_fmtHalf(effClose)+') fits within contract hrs — all pickers work the same shift, no OT. ';
   h+='Day-off rotates Mon→Tue→Wed… (1 weekday off per picker per week, illustrative). Sat–Sun all pickers work.</div></div>';
   return h;
 }
@@ -2142,14 +2159,37 @@ function renderStoreOptions(result,store){
         }
         if((ev.trimStartHrs&&ev.trimStartHrs.length)||(ev.trimEndHrs&&ev.trimEndHrs.length)){
           var allTrimmed=(ev.trimStartHrs||[]).concat(ev.trimEndHrs||[]);
+          var trimSet2={};allTrimmed.forEach(function(t){trimSet2[t.hr]=true;});
+          // Full store-window hourly table (snapped open → snapped close), trimmed rows in red
+          var _h2=_getStoreHourly(store.vendorId),_g2=_getStoreHourlyGMV(store.vendorId);
+          var winS=ev.snOpen!=null?Math.floor(ev.snOpen):null,winE=ev.snClose!=null?Math.ceil(ev.snClose):null;
           h+='<div style="color:#374151;margin-bottom:4px"><i class="fas fa-scissors" style="color:#0284c7;margin-right:5px;width:12px"></i>'
-            +'Edge hours removed <span style="color:#6b7280">(avg orders &lt; '+ev.edgeThr+' <i>and</i> GMV &lt; AED '+ev.edgeGmv+')</span>:</div>';
-          h+='<div style="display:flex;flex-wrap:wrap;gap:4px;margin-bottom:6px;padding-left:17px">';
-          allTrimmed.forEach(function(t){
-            h+='<span style="background:#fee2e2;color:#991b1b;padding:2px 8px;border-radius:4px;font-size:10px;font-weight:600">'
-              +_fmtH(t.hr)+': '+t.orders+' ord &nbsp;·&nbsp; AED '+t.gmv+' GMV</span>';
-          });
-          h+='</div>';
+            +'Store hours &amp; hourly data <span style="color:#6b7280">(red = removed, avg orders &lt; '+ev.edgeThr+' <i>and</i> GMV &lt; AED '+ev.edgeGmv+')</span>:</div>';
+          h+='<div style="overflow-x:auto;margin-bottom:6px;padding-left:17px"><table style="border-collapse:collapse;font-size:10px">';
+          h+='<tr><th style="padding:3px 10px;background:#1e293b;color:#fff;text-align:center">Hour</th>'
+            +'<th style="padding:3px 10px;background:#1e293b;color:#fff;text-align:right">Avg Orders/hr</th>'
+            +'<th style="padding:3px 10px;background:#1e293b;color:#fff;text-align:right">Avg GMV/hr (AED)</th>'
+            +'<th style="padding:3px 10px;background:#1e293b;color:#fff;text-align:center">Status</th></tr>';
+          if(winS!=null&&winE!=null){
+            for(var _hh=winS;_hh<=winE;_hh++){
+              var _ord=_h2?Math.round((_h2[_hh]||0)*10)/10:allTrimmed.filter(function(t){return t.hr===_hh;})[0]?allTrimmed.filter(function(t){return t.hr===_hh;})[0].orders:'—';
+              var _gv=_g2?Math.round(_g2[_hh]||0):(allTrimmed.filter(function(t){return t.hr===_hh;})[0]?allTrimmed.filter(function(t){return t.hr===_hh;})[0].gmv:'—');
+              var _isTrim=trimSet2[_hh];
+              var _bg=_isTrim?'#fee2e2':'#f0fdf4';var _fg=_isTrim?'#991b1b':'#065f46';
+              h+='<tr><td style="padding:2px 10px;font-weight:700;background:'+_bg+';color:'+_fg+';border:1px solid #e2e8f0;text-align:center">'+_fmtH(_hh)+'</td>'
+                +'<td style="padding:2px 10px;background:'+_bg+';color:'+_fg+';border:1px solid #e2e8f0;text-align:right">'+_ord+'</td>'
+                +'<td style="padding:2px 10px;background:'+_bg+';color:'+_fg+';border:1px solid #e2e8f0;text-align:right">'+_gv+'</td>'
+                +'<td style="padding:2px 10px;background:'+_bg+';color:'+_fg+';border:1px solid #e2e8f0;text-align:center;font-weight:600">'+(_isTrim?'Removed':'Active')+'</td></tr>';
+            }
+          }else{
+            allTrimmed.forEach(function(t){
+              h+='<tr><td style="padding:2px 10px;background:#fee2e2;color:#991b1b;font-weight:700;border:1px solid #fecaca;text-align:center">'+_fmtH(t.hr)+'</td>'
+                +'<td style="padding:2px 10px;background:#fee2e2;color:#991b1b;border:1px solid #fecaca;text-align:right">'+t.orders+'</td>'
+                +'<td style="padding:2px 10px;background:#fee2e2;color:#991b1b;border:1px solid #fecaca;text-align:right">'+t.gmv+'</td>'
+                +'<td style="padding:2px 10px;background:#fee2e2;color:#991b1b;border:1px solid #fecaca;text-align:center;font-weight:600">Removed</td></tr>';
+            });
+          }
+          h+='</table></div>';
         }
         if(ev.rawOpen!=null&&ev.snOpen!=null){
           var snapParts=[];
@@ -2315,7 +2355,7 @@ function renderOptimizerView(){
 
     // Options (collapsible) — weekly schedule shown first, then the ranked options
     h+='<div id="os'+idx+'" style="display:none;padding:14px 16px">';
-    h+='<div style="font-size:12px;font-weight:700;color:var(--muted);text-transform:uppercase;letter-spacing:.5px;margin-bottom:8px"><i class="fas fa-calendar-week" style="margin-right:5px"></i>Weekly Staffing Schedule</div>';
+    h+='<div style="display:flex;align-items:baseline;gap:10px;margin-bottom:8px"><div style="font-size:12px;font-weight:700;color:var(--muted);text-transform:uppercase;letter-spacing:.5px"><i class="fas fa-calendar-week" style="margin-right:5px"></i>Weekly Staffing Schedule</div><span style="font-size:10px;background:#fef3c7;color:#92400e;padding:1px 7px;border-radius:10px;font-weight:600">Current State</span></div>';
     h+=renderWeeklySchedule(store);
     h+='<div style="border-top:1px solid var(--border);margin:16px 0"></div>';
     h+=renderStoreOptions(optResult,store);
