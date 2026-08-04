@@ -2078,8 +2078,8 @@ function renderProposedRoster(store,opt){
       if(ev.adjOpen!=null)dayOpen=Math.max(dayOpen,ev.adjOpen);
       if(ev.adjClose!=null)dayClose=Math.min(dayClose,ev.adjClose);
       if(dayClose<=dayOpen){h+='<td style="padding:4px 6px;background:#f8fafc;color:#94a3b8;text-align:center;border:1px solid #f1f5f9">closed</td>';return;}
-      // shiftHrs: picker works the store window if it's shorter than their contract
-      var shiftHrs=Math.min(contractHrs,dayClose-dayOpen);
+      // Always show full contract hours — trim reduces store active window, not picker contract
+      var shiftHrs=contractHrs;
       var sS,sE;
       if(isLate){sE=dayClose;sS=dayClose-shiftHrs;}
       else{sS=dayOpen;sE=dayOpen+shiftHrs;}
@@ -2092,8 +2092,9 @@ function renderProposedRoster(store,opt){
   }
   h+='</table></div>';
   h+='<div style="font-size:9px;color:#64748b;margin-top:4px"><i class="fas fa-info-circle" style="margin-right:3px"></i>';
-  if(needsStagger)h+='Store window ('+_fmtHalf(effOpen)+'–'+_fmtHalf(effClose)+') exceeds contract hrs — Picker 1 starts at open, last picker ends at close, overlap covers peak. ';
-  else if(storeWindow!=null)h+='Store window ('+_fmtHalf(effOpen)+'–'+_fmtHalf(effClose)+') fits within contract hrs — all pickers work the same shift, no OT. ';
+  if(needsStagger)h+='Store window ('+_fmtHalf(effOpen)+'–'+_fmtHalf(effClose)+') exceeds contract hrs ('+contractHrs+'hrs) — Picker 1 starts at open, last picker ends at close, overlap covers peak. Neither picker exceeds contract. ';
+  else if(storeWindow!=null&&storeWindow<contractHrs)h+='Store active window ('+_fmtHalf(effOpen)+'–'+_fmtHalf(effClose)+', '+storeWindow.toFixed(1)+'hrs) is shorter than contract ('+contractHrs+'hrs) — pickers start at store open and work their full '+contractHrs+'-hr contract. Store closes before contract ends → 0 OT. ';
+  else if(storeWindow!=null)h+='Store window ('+_fmtHalf(effOpen)+'–'+_fmtHalf(effClose)+') fits exactly within contract hrs ('+contractHrs+'hrs) — all pickers work the same shift, no OT. ';
   h+='Day-off rotates Mon→Tue→Wed… (1 weekday off per picker per week, illustrative). Sat–Sun all pickers work.</div></div>';
   return h;
 }
