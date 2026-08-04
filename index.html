@@ -1427,7 +1427,7 @@ function calcOvertimeScenario(store){
     rawStoreHrs=timing.duration;
     snappedOpen=_snapHalf(timing.openHr,'up');
     snappedClose=_snapHalf(timing.closeHr,'down');
-    var trimmed=_trimEdgeHours(snappedOpen,snappedClose,hourlyOT,gmvData,edgeThr,edgeGMV);
+    var trimmed=_trimEdgeHours(snappedOpen,snappedClose,hourlyOT,gmvData,edgeThr,edgeGMV,contractHrs);
     adjOpen=trimmed.open; adjClose=trimmed.close;
     trimStart=trimmed.trimStart; trimEnd=trimmed.trimEnd;
   } else if(hourlyOT){
@@ -1584,11 +1584,13 @@ function _getStoreWeeklyTiming(vendorId){
 // Count weekdays (Mon-Fri) approximation from total working days
 function _weekdaysOnly(wDays){return Math.round(wDays*5/7);}
 // Trim low-order edge hours from store window; returns {open, close, trimmedStart, trimmedEnd}
-function _trimEdgeHours(snappedOpen,snappedClose,hourly,gmv,orderThr,gmvThr){
+function _trimEdgeHours(snappedOpen,snappedClose,hourly,gmv,orderThr,gmvThr,minHrs){
   var adjOpen=snappedOpen,adjClose=snappedClose;
   var trimStart=[],trimEnd=[];
+  // Never trim below minHrs (contractHrs) — only edge hours, never middle hours
+  var minWin=minHrs||1;
   // Trim from start: while first integer hour of window has avg orders ≤ threshold
-  while(adjOpen<adjClose-1){
+  while(adjClose-adjOpen>minWin){
     var h=Math.floor(adjOpen);
     var ord=hourly?hourly[h]||0:0;
     var gv=gmv?gmv[h]||0:0;
@@ -1596,7 +1598,7 @@ function _trimEdgeHours(snappedOpen,snappedClose,hourly,gmv,orderThr,gmvThr){
     else break;
   }
   // Trim from end: while last integer hour has avg orders ≤ threshold
-  while(adjClose>adjOpen+1){
+  while(adjClose-adjOpen>minWin){
     var h2=Math.floor(adjClose-0.5);
     var ord2=hourly?hourly[h2]||0:0;
     var gv2=gmv?gmv[h2]||0:0;
@@ -1696,7 +1698,7 @@ function calcTimingScenario(store){
   var storeOpen2=null,storeClose2=null,trimStart2=[],trimEnd2=[];
   if(timing2){
     var snO=_snapHalf(timing2.openHr,'up'),snC=_snapHalf(timing2.closeHr,'down');
-    var tr2=_trimEdgeHours(snO,snC,hourly,gmv,edgeThr2,edgeGMV2);
+    var tr2=_trimEdgeHours(snO,snC,hourly,gmv,edgeThr2,edgeGMV2,contractHrs);
     storeOpen2=tr2.open; storeClose2=tr2.close;
     trimStart2=tr2.trimStart; trimEnd2=tr2.trimEnd;
   }
@@ -1740,7 +1742,7 @@ function calcTimingScenarioNotViable(store,minPickers,contractHrs,avgOrdersPerDa
   var so3=null,sc3=null;
   if(timing3){
     var sn3=_snapHalf(timing3.openHr,'up'),sc3b=_snapHalf(timing3.closeHr,'down');
-    var tr3=_trimEdgeHours(sn3,sc3b,hourly,gmv,cfg3.edgeOrderThreshold||1,cfg3.edgeGMVThreshold||50);
+    var tr3=_trimEdgeHours(sn3,sc3b,hourly,gmv,cfg3.edgeOrderThreshold||1,cfg3.edgeGMVThreshold||50,contractHrs);
     so3=tr3.open; sc3=tr3.close;
   }
   var shiftInfo=hourly?_findOptShift(hourly,contractHrs,gmv,so3,sc3):null;
@@ -1786,7 +1788,7 @@ function calcAllOptions(store){
   var snOpen=null,snClose=null,adjOpen=null,adjClose=null,trimS=[],trimE=[];
   if(timing){
     snOpen=_snapHalf(timing.openHr,'up');snClose=_snapHalf(timing.closeHr,'down');
-    var tr=_trimEdgeHours(snOpen,snClose,hourly,gmv,edgeThr,edgeGmv);
+    var tr=_trimEdgeHours(snOpen,snClose,hourly,gmv,edgeThr,edgeGmv,contractHrs);
     adjOpen=tr.open;adjClose=tr.close;trimS=tr.trimStart;trimE=tr.trimEnd;
   }
   // Peak = busiest hour across full day; -1 means no data (avoids midnight-with-0 as fake peak)
