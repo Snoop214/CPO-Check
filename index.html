@@ -190,9 +190,10 @@ if(typeof google==='undefined'||!google.script||window.location.hostname.indexOf
         _fetchJSON('data/hourly_gmv.json').catch(function(){return {};}),
         _fetchJSON('data/timing.json').catch(function(){return {};}),
         _fetchJSON('config/users.json').catch(function(){return [];}),
+        _fetchJSON('data/raw_attend_mtd.json').catch(function(){return {};}),
       ]).then(function(res){
         var meta=res[0],mtd=res[1],master=res[2],cfg=res[3],
-            hourly=res[4],gmv=res[5],timing=res[6],users=res[7];
+            hourly=res[4],gmv=res[5],timing=res[6],users=res[7],roster=res[8];
         var userEmail=window._staticUserEmail||'';
         var userRec=(users||[]).filter(function(u){return u.email===userEmail;})[0]||{email:userEmail,role:'Admin',name:''};
         window._staticUsers=users||[];
@@ -218,6 +219,7 @@ if(typeof google==='undefined'||!google.script||window.location.hostname.indexOf
           hourlyData:    hourly,
           hourlyGMVData: gmv,
           storeTimingData: timing,
+          pickerRoster: roster,
         };
       });
     },
@@ -450,6 +452,7 @@ function onInitialData(r) {
   if(r.hourlyData)APP.hourlyData=r.hourlyData;
   if(r.hourlyGMVData)APP.hourlyGMVData=r.hourlyGMVData;
   if(r.storeTimingData)APP.storeTimingData=r.storeTimingData;
+  if(r.pickerRoster&&r.pickerRoster.byStore)APP.pickerRoster=r.pickerRoster.byStore;
   document.getElementById('userEmail').textContent = APP.user.email||'Unknown';
   document.getElementById('userRole').textContent  = APP.user.role||'';
 
@@ -2037,10 +2040,20 @@ function renderProposedRoster(store,opt){
   h+='<tr><th style="padding:5px 8px;background:#1e293b;color:#fff;font-weight:600;text-align:left;white-space:nowrap">Position</th>';
   DLBL.forEach(function(d,di){h+='<th style="padding:5px 6px;background:'+(di>=5?'#334155':'#1e293b')+';color:#fff;text-align:center;white-space:nowrap">'+d+'</th>';});
   h+='<th style="padding:5px 6px;background:#1e293b;color:#94a3b8;text-align:center;font-size:9px;white-space:nowrap">Daily OT</th></tr>';
+  // Build sorted picker list from real attendance roster
+  var rosterForStore=(APP.pickerRoster&&APP.pickerRoster[store.vendorId])||[];
+  var sortedPickers=rosterForStore.slice().sort(function(a,b){
+    var sa=(a.values||[]).reduce(function(s,v){return s+v;},0);
+    var sb=(b.values||[]).reduce(function(s,v){return s+v;},0);
+    return sb-sa;
+  });
   for(var p=0;p<nPickers;p++){
     var isLate=(opt.id==='staggered_shift')&&p>0;
     var dayOffIdx=p%5;
-    h+='<tr><td style="padding:4px 8px;font-weight:600;color:#1e293b;background:#f8fafc;white-space:nowrap;border:1px solid #e2e8f0">Picker '+(p+1)+'</td>';
+    var pk=sortedPickers[p];
+    var pkLabel=pk&&pk.name?pk.name:'Picker '+(p+1);
+    var pkId=pk&&pk.shopperId?'<br><span style="font-size:9px;color:#64748b;font-weight:400">'+pk.shopperId+'</span>':'';
+    h+='<tr><td style="padding:4px 8px;font-weight:600;color:#1e293b;background:#f8fafc;white-space:nowrap;border:1px solid #e2e8f0">'+pkLabel+pkId+'</td>';
     DLBL.forEach(function(d,di){
       var isOff=di<5&&di===dayOffIdx;
       if(isOff){h+='<td style="padding:4px 6px;background:#fca5a5;color:#991b1b;font-weight:700;text-align:center;border:1px solid #fff;white-space:nowrap">OFF</td>';return;}
