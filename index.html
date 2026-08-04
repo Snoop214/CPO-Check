@@ -2048,7 +2048,9 @@ function renderProposedRoster(store,opt){
     return sb-sa;
   });
   for(var p=0;p<nPickers;p++){
-    var isLate=(opt.id==='staggered_shift')&&p>0;
+    // First picker = early (store open → +contractHrs); last picker = late (store close − contractHrs → close)
+    // For staggered_shift all non-first pickers are late; for other options only the last one is
+    var isLate=opt.id==='staggered_shift'?p>0:(p===nPickers-1&&nPickers>1);
     var dayOffIdx=p%5;
     var pk=sortedPickers[p];
     var pkLabel=pk&&pk.name?pk.name:'Picker '+(p+1);
@@ -2074,7 +2076,7 @@ function renderProposedRoster(store,opt){
   }
   h+='</table></div>';
   h+='<div style="font-size:9px;color:#64748b;margin-top:4px"><i class="fas fa-info-circle" style="margin-right:3px"></i>';
-  if(opt.id==='staggered_shift')h+='Picker 1 starts at store open (early shift). Picker 2+ end at store close (late shift). ';
+  if(nPickers>1)h+='Picker 1 = early shift (from store open). Last picker = late shift (ends at store close). Together they cover the full window with no overlap OT. ';
   h+='Day-off rotates Mon→Tue→Wed… (1 weekday off per picker per week, illustrative). Sat–Sun all pickers work.</div></div>';
   return h;
 }
