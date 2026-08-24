@@ -1,0 +1,28 @@
+name: Send Invite Email
+
+on:
+  repository_dispatch:
+    types: [send-invite]
+
+jobs:
+  send:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout repo
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: Send invite email
+        env:
+          SMTP_USERNAME: ${{ secrets.SMTP_USERNAME }}
+          SMTP_PASSWORD: ${{ secrets.SMTP_PASSWORD }}
+          TO_EMAIL: ${{ github.event.client_payload.email }}
+          ROLE: ${{ github.event.client_payload.role }}
+          SUPERVISOR: ${{ github.event.client_payload.supervisor }}
+          EMAIL_KIND: ${{ github.event.client_payload.kind }}
+        run: python scripts/send_invite.py

@@ -263,9 +263,9 @@ if(typeof google==='undefined'||!google.script||window.location.hostname.indexOf
     saveRamadanConfig:function(ram){return _ghWriteConfig(function(cfg){cfg.ramadan=ram;return ram;},'Update Ramadan period');},
     addHolidayEntry:function(entry){return _ghWriteConfig(function(cfg){var arr=cfg.holidays||[];entry.id=Date.now().toString();arr.push(entry);cfg.holidays=arr;return arr;},'Add holiday');},
     deleteHolidayEntry:function(id){return _ghWriteConfig(function(cfg){var arr=(cfg.holidays||[]).filter(function(e){return e.id!==id;});cfg.holidays=arr;return arr;},'Delete holiday');},
-    addUser:function(email,role,sup){return _ghWriteUsers(function(u){if(u.some(function(x){return x.email===email;}))return {_err:'User already exists'};u.push({email:email,role:role,name:'',supervisorName:sup||''});return {};})},
-    revokeUser:function(email){return _ghWriteUsers(function(u){return u.map(function(x){return x.email===email?Object.assign({},x,{status:'revoked'}):x;});});},
-    reinstateUser:function(email){return _ghWriteUsers(function(u){return u.map(function(x){return x.email===email?Object.assign({},x,{status:'active'}):x;});});},
+    addUser:function(email,role,sup){return _ghWriteUsers(function(u){if(u.some(function(x){return x.email===email;}))return {_err:'User already exists'};u.push({email:email,role:role,name:'',supervisorName:sup||''});return {};}).then(function(result){if(!result||!result.error)_ghTriggerInvite(email,role,sup,'welcome');return result;})},
+    revokeUser:function(email){return _ghWriteUsers(function(u){return u.map(function(x){return x.email===email?Object.assign({},x,{status:'revoked'}):x;});}).then(function(result){_ghTriggerInvite(email,'','','revoked');return result;});},
+    reinstateUser:function(email,role,sup){return _ghWriteUsers(function(u){return u.map(function(x){return x.email===email?Object.assign({},x,{status:'active'}):x;});}).then(function(result){_ghTriggerInvite(email,role||'',sup||'','reinstated');return result;});},
     removeUser:function(email){return _ghWriteUsers(function(u){return u.filter(function(x){return x.email!==email;});});},
     listArchivedMonths:function(){return Promise.resolve([]);},
     computeCPOFromArchive:function(){return Promise.resolve({error:'Archive not available in static mode'});},
@@ -303,6 +303,19 @@ if(typeof google==='undefined'||!google.script||window.location.hostname.indexOf
       var users=Array.isArray(result)?result:f.data;
       return _ghPut('config/users.json',f.sha,users,'Update users').then(function(){window._staticUsers=users;return Array.isArray(result)?{}:result;});
     });
+  }
+  // Fires a repository_dispatch event that a GitHub Actions workflow
+  // (.github/workflows/send-invite.yml) picks up and sends the actual
+  // email via Gmail SMTP — since GitHub Pages has no server of its own.
+  function _ghTriggerInvite(email,role,sup,kind){
+    if(!_ghTok()){console.error('Cannot send invite email — no GitHub token set in Settings → GitHub Token.');return Promise.resolve();}
+    return fetch('https://api.github.com/repos/Snoop214/CPO-Check/dispatches',{
+      method:'POST',
+      headers:_ghHead(),
+      body:JSON.stringify({event_type:'send-invite',client_payload:{email:email,role:role||'',supervisor:sup||'',kind:kind||'welcome'}})
+    }).then(function(r){
+      if(!r.ok)return r.text().then(function(t){console.error('Invite trigger failed:',r.status,t);});
+    }).catch(function(e){console.error('Invite trigger failed:',e);});
   }
   // Build the google.script.run shim
   window.google={script:{run:{}}};
