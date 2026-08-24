@@ -317,6 +317,21 @@ if(typeof google==='undefined'||!google.script||window.location.hostname.indexOf
       if(!r.ok)return r.text().then(function(t){console.error('Invite trigger failed:',r.status,t);});
     }).catch(function(e){console.error('Invite trigger failed:',e);});
   }
+  // Fires a workflow_dispatch on compute.yml so an admin can force an
+  // immediate data refresh from the dashboard instead of waiting for the
+  // 06:00 / 12:00 UTC schedule. Requires the same GitHub token used for
+  // config writes (Settings → GitHub Token), scope: repo.
+  window._ghTriggerCompute=function(){
+    if(!_ghTok())return Promise.reject(new Error('No GitHub token — go to Settings → GitHub Token'));
+    return fetch('https://api.github.com/repos/Snoop214/CPO-Check/actions/workflows/compute.yml/dispatches',{
+      method:'POST',
+      headers:_ghHead(),
+      body:JSON.stringify({ref:'main'})
+    }).then(function(r){
+      if(!r.ok)return r.text().then(function(t){throw new Error('GitHub returned '+r.status+': '+t);});
+      return true;
+    });
+  };
   // Build the google.script.run shim
   window.google={script:{run:{}}};
   (function(){
@@ -2466,7 +2481,10 @@ function renderFetchAllTab(){
     function _showFetchStatus(s){
       var el=document.getElementById('fetchAllStatus'); if(!el)return;
       var btns=window._staticMode
-        ?'<div style="font-size:11px;color:var(--muted);font-style:italic">Data updated automatically by GitHub Actions</div>'
+        ?'<div style="display:flex;align-items:center;gap:10px;flex-shrink:0">'+
+          '<span style="font-size:11px;color:var(--muted);font-style:italic">Auto-updates twice daily</span>'+
+          '<button class="btn btn-primary" onclick="triggerComputeNow()" id="fetchAllBtn" style="font-size:12px;padding:8px 16px"><i class="fas fa-play" style="margin-right:5px"></i>Run Now</button>'+
+          '</div>'
         :'<div style="display:flex;gap:8px;flex-shrink:0">'+
           '<button class="btn btn-outline" onclick="runInBackground()" id="fetchBgBtn" style="font-size:11px;padding:7px 12px"><i class="fas fa-cloud-upload-alt" style="margin-right:5px"></i>Run in Background</button>'+
           '<button class="btn btn-primary" onclick="startFetchAll()" id="fetchAllBtn" style="font-size:12px;padding:8px 16px"><i class="fas fa-play" style="margin-right:5px"></i>Trigger Fetch</button>'+
@@ -2673,6 +2691,21 @@ function renderFetchHistory(log){
 }
 
 var _lastActionsRuns=[];
+// Admin — manually fire the compute.yml workflow instead of waiting for the schedule
+function triggerComputeNow(){
+  var btn=document.getElementById('fetchAllBtn');
+  if(!_ghTok()){showToast('Add a GitHub token in Settings → GitHub Token first','error');return;}
+  if(btn){btn.disabled=true;btn.innerHTML='<i class="fas fa-spinner fa-spin" style="margin-right:5px"></i>Starting...';}
+  window._ghTriggerCompute().then(function(){
+    showToast('Refresh started — check history below in ~10s','success');
+    if(btn){btn.disabled=false;btn.innerHTML='<i class="fas fa-play" style="margin-right:5px"></i>Run Now';}
+    setTimeout(loadActionsHistory,8000);
+    setTimeout(loadActionsHistory,20000);
+  }).catch(function(e){
+    showToast('Failed to start: '+e.message,'error');
+    if(btn){btn.disabled=false;btn.innerHTML='<i class="fas fa-play" style="margin-right:5px"></i>Run Now';}
+  });
+}
 function loadActionsHistory(){
   var el=document.getElementById('fetchHistorySection'); if(!el)return;
   var tok=_ghTok();
