@@ -655,14 +655,30 @@ def main():
         save_json(f'cpo_monthly_{dl[:7]}.json', r)
 
     # 7. Write meta file — date lists, sync info, timestamp
+    # Merge with any existing historical JSON files in data/ so old weeks/months
+    # are never lost when the Google Sheet only returns recent data.
+    import glob, re as _re
+    def _collect_existing(pattern):
+        found = set()
+        for f in glob.glob(os.path.join(DATA_DIR, pattern)):
+            m = _re.search(r'(\d{4}-\d{2}-\d{2})', os.path.basename(f))
+            if m:
+                found.add(m.group(1))
+        return sorted(found)
+
+    existing_weekly  = _collect_existing('cpo_weekly_*.json')
+    existing_monthly = _collect_existing('cpo_monthly_*.json')
+    all_weekly  = sorted(set(existing_weekly)  | set(d[:10] for d in dates_weekly))
+    all_monthly = sorted(set(d[:7]+'-01' for d in existing_monthly) | set(d[:10] for d in dates_monthly))
+
     now = datetime.utcnow().isoformat() + 'Z'
     meta = {
         'timestamp': now,
         'syncDate':  mtd_result.get('syncDate'),
         'dates': {
             'mtd':     dates_mtd,
-            'weekly':  dates_weekly,
-            'monthly': dates_monthly,
+            'weekly':  all_weekly,
+            'monthly': all_monthly,
         },
     }
     save_json('meta.json', meta)
