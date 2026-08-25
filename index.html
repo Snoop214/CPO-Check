@@ -1151,7 +1151,7 @@ function renderTrendChart(trendData){
     filterBadge+='<span style="background:#411517;color:#fff;border-radius:4px;padding:2px 8px;font-size:11px;margin-right:4px">'+label+'</span>';
   }
 
-  var labels=[], cpoLine=[], utrLine=[];
+  var labels=[], cpoLine=[], utrLine=[], ordersLine=[];
   pts.forEach(function(p){
     if(!p.data||p.data.error)return;
     var rows=p.data.data||[];
@@ -1168,6 +1168,7 @@ function renderTrendChart(trendData){
     labels.push(p.label);
     cpoLine.push(to>0?Math.round(tc/to*100)/100:null);
     utrLine.push(uD>0?Math.round(uN/uD*10)/10:null);
+    ordersLine.push(to>0?to:null);
   });
 
   if(!labels.length){ca.innerHTML='<div class="chart-wrap"><p style="color:var(--muted);font-size:13px;padding:12px">No data found for selection. Try computing dates in Dashboard first.</p></div>';return;}
@@ -1191,6 +1192,16 @@ function renderTrendChart(trendData){
   var cpoAxis=smartAxis(cpoLine);
   var utrAxis=smartAxis(utrLine);
 
+  function smartAxisOrders(values){
+    var max=0;
+    values.forEach(function(v){if(v!=null&&v>max)max=v;});
+    var mag=Math.pow(10,Math.floor(Math.log10(max||1)));
+    var topN=Math.ceil((max||1)/mag)*mag;
+    if(topN===max)topN+=mag;
+    return{min:0,max:topN};
+  }
+  var ordersAxis=smartAxisOrders(ordersLine);
+
   var ds=[];
   if(showCPO)ds.push({label:'CPO (AED)',data:cpoLine,borderColor:'#FF5A00',backgroundColor:'rgba(255,90,0,.1)',tension:.3,fill:showUTR?false:true,yAxisID:'y',spanGaps:true,pointRadius:5,pointHoverRadius:7,
     datalabels:{anchor:'end',align:'top',color:'#FF5A00',font:{size:10,weight:'600'},formatter:function(v){return v!=null?v.toFixed(2):'';}},
@@ -1198,8 +1209,12 @@ function renderTrendChart(trendData){
   if(showUTR)ds.push({label:'UTR (ord/hr)',data:utrLine,borderColor:'#7c3aed',backgroundColor:'rgba(124,58,237,.08)',tension:.3,fill:false,yAxisID:dual?'y1':'y',spanGaps:true,pointRadius:5,pointHoverRadius:7,
     datalabels:{anchor:'end',align:'top',color:'#7c3aed',font:{size:10,weight:'600'},formatter:function(v){return v!=null?v.toFixed(1):'';}},
   });
+  ds.push({label:'Orders',data:ordersLine,borderColor:'#059669',backgroundColor:'rgba(5,150,105,.07)',tension:.3,fill:false,yAxisID:'y2',spanGaps:true,pointRadius:5,pointHoverRadius:7,borderDash:[5,3],
+    datalabels:{anchor:'end',align:'bottom',color:'#059669',font:{size:10,weight:'600'},formatter:function(v){return v!=null?fmt(v):'';}},
+  });
   var scales={y:{type:'linear',position:'left',min:cpoAxis.min,max:cpoAxis.max,ticks:{stepSize:cpoAxis.ticks.stepSize},title:{display:true,text:showUTR&&!showCPO?'UTR (ord/hr)':'CPO (AED)'}}};
   if(dual)scales.y1={type:'linear',position:'right',min:utrAxis.min,max:utrAxis.max,ticks:{stepSize:utrAxis.ticks.stepSize},title:{display:true,text:'UTR (ord/hr)'},grid:{drawOnChartArea:false}};
+  scales.y2={type:'linear',position:'right',min:ordersAxis.min,max:ordersAxis.max,title:{display:true,text:'Orders'},grid:{drawOnChartArea:false},ticks:{callback:function(v){return v>=1000?(v/1000).toFixed(0)+'k':v;}}};
 
   // Register datalabels plugin inline (CDN-free fallback: draw labels after chart)
   APP._mainTrendChart=new Chart(ctx,{type:'line',data:{labels:labels,datasets:ds},options:{
@@ -1225,7 +1240,7 @@ function renderTrendChart(trendData){
         meta.data.forEach(function(pt,i){
           var val=ds.data[i];
           if(val==null)return;
-          var label=di===0?(val.toFixed?val.toFixed(2):val):(val.toFixed?val.toFixed(1):val);
+          var label=di===0?(val.toFixed?val.toFixed(2):val):di===1?(val.toFixed?val.toFixed(1):val):fmt(val);
           chartCtx.fillText(label,pt.x,pt.y-10);
         });
       });
@@ -1239,11 +1254,11 @@ function renderTrendTable(trendData){
   var pts=trendData.pts, chain=trendData.chain, stores=trendData.stores||[];
   var h='<div class="table-wrap"><div class="table-toolbar"><span style="font-size:12px;font-weight:600;color:var(--dark)">Trend Data</span><button class="btn btn-sm btn-outline" onclick="exportTrendCSV()"><i class="fas fa-download"></i> Export</button></div>';
   h+='<div class="tbl-scroll"><table><thead><tr>';
-  h+='<th>Period</th><th style="text-align:right">Orders</th><th style="text-align:right">Picker Cost</th>';
+  h+='<th>Period</th><th style="text-align:right">Orders</th><th style="text-align:right">Orders Δ%</th><th style="text-align:right">Picker Cost</th>';
   h+='<th style="text-align:right">CPO (AED)</th><th style="text-align:right">CPO Δ%</th>';
   h+='<th style="text-align:right">UTR (ord/hr)</th><th style="text-align:right">UTR Δ%</th></tr></thead><tbody>';
   APP._trendTableRows=[];
-  var prevCPO=null, prevUTR=null;
+  var prevCPO=null, prevUTR=null, prevOrders=null;
   pts.forEach(function(p){
     if(!p.data||p.data.error)return;
     var rows=(p.data.data||[]).filter(function(r){
@@ -1256,10 +1271,11 @@ function renderTrendTable(trendData){
     var cpo=to>0?Math.round(tc/to*100)/100:0;
     var utr=uD>0?Math.round(uN/uD*10)/10:0;
     // % change
-    var cpoPct=null, utrPct=null;
+    var cpoPct=null, utrPct=null, ordersPct=null;
     if(prevCPO!==null&&prevCPO>0)cpoPct=Math.round((cpo-prevCPO)/prevCPO*1000)/10;
     if(prevUTR!==null&&prevUTR>0)utrPct=Math.round((utr-prevUTR)/prevUTR*1000)/10;
-    prevCPO=cpo; prevUTR=utr;
+    if(prevOrders!==null&&prevOrders>0)ordersPct=Math.round((to-prevOrders)/prevOrders*1000)/10;
+    prevCPO=cpo; prevUTR=utr; prevOrders=to;
     function pctBadge(pct,lower_is_better){
       if(pct===null)return'<span style="color:var(--muted);font-size:11px">—</span>';
       var good=(lower_is_better?pct<0:pct>0);
@@ -1268,8 +1284,10 @@ function renderTrendTable(trendData){
       return'<span style="color:'+color+';font-weight:600;font-size:11px">'+arrow+' '+Math.abs(pct).toFixed(1)+'%</span>';
     }
     if(to===0&&tc===0)return; // skip completely empty periods
-    APP._trendTableRows.push({period:p.label,orders:to,cost:Math.round(tc),cpo:cpo,utr:utr,cpoPct:cpoPct,utrPct:utrPct});
-    h+='<tr><td>'+p.label+'</td><td style="text-align:right;font-weight:600">'+fmt(to)+'</td>';
+    APP._trendTableRows.push({period:p.label,orders:to,ordersPct:ordersPct,cost:Math.round(tc),cpo:cpo,utr:utr,cpoPct:cpoPct,utrPct:utrPct});
+    h+='<tr><td>'+p.label+'</td>';
+    h+='<td style="text-align:right;font-weight:600;color:var(--success)">'+fmt(to)+'</td>';
+    h+='<td style="text-align:right">'+pctBadge(ordersPct,false)+'</td>';
     h+='<td style="text-align:right">'+_getCurrency()+' '+fmt(Math.round(tc))+'</td>';
     h+='<td style="text-align:right"><span class="badge '+cpoCls(cpo)+'">'+_getCurrency()+' '+cpo.toFixed(2)+'</span></td>';
     h+='<td style="text-align:right">'+pctBadge(cpoPct,true)+'</td>';
@@ -1282,8 +1300,8 @@ function renderTrendTable(trendData){
 
 function exportTrendCSV(){
   var rows=APP._trendTableRows||[];
-  var csv='Period,Orders,Picker Cost,CPO (AED),CPO Delta%,UTR (ord/hr),UTR Delta%\n';
-  rows.forEach(function(r){csv+=r.period+','+r.orders+','+r.cost+','+r.cpo+','+(r.cpoPct!=null?r.cpoPct:'')+','+r.utr+','+(r.utrPct!=null?r.utrPct:'')+'\n';});
+  var csv='Period,Orders,Orders Delta%,Picker Cost,CPO (AED),CPO Delta%,UTR (ord/hr),UTR Delta%\n';
+  rows.forEach(function(r){csv+=r.period+','+r.orders+','+(r.ordersPct!=null?r.ordersPct:'')+','+r.cost+','+r.cpo+','+(r.cpoPct!=null?r.cpoPct:'')+','+r.utr+','+(r.utrPct!=null?r.utrPct:'')+'\n';});
   var a=document.createElement('a');a.href=URL.createObjectURL(new Blob([csv],{type:'text/csv'}));
   a.download='CPO_Trend.csv';a.click();
 }
