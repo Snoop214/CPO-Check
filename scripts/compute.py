@@ -380,29 +380,56 @@ def build_attend_struct(archived_by_date, date_labels, period):
             day_list = [f'{y}-{m:02d}-{d:02d}' for d in range(1, last_day + 1)]
 
         for ds in day_list:
+            # Dedupe multiple shift rows for the same (vendorId, shopperId) on
+            # THIS ONE calendar day into a single day-slot before adding it to
+            # any per-picker total. The source "Daily Attendance" sheet can
+            # carry more than one row per person per day (e.g. a corrected/
+            # re-entered row alongside the original) — without this, weekly/
+            # monthly sums silently double-count a day and a picker's present
+            # days can exceed the number of calendar days in the period.
+            # Precedence if a day's rows disagree: present > on leave > absent
+            # — applied via a priority level so row ORDER never matters (a
+            # later 'Absent' row can't clobber an earlier 'Present' one, or
+            # vice versa).
+            day_agg = {}
             for rec in archived_by_date.get(ds, []):
-                vid, sid = rec['vendorId'], rec['shopperId']
-                store = by_store.setdefault(vid, {})
-                pk = store.setdefault(sid, {
-                    'shopperId': sid, 'name': rec['name'], 'userType': rec['userType'],
-                    'department': rec['department'],
-                    'values': [0] * len(date_labels), 'deductions': [0] * len(date_labels),
-                    'absences': [0] * len(date_labels), 'onLeaves': [0] * len(date_labels),
+                key = (rec['vendorId'], rec['shopperId'])
+                a = day_agg.setdefault(key, {
+                    'present': 0, 'absent': 0, 'onLeave': 0, 'deduction': 0, 'level': -1,
+                    'name': rec['name'], 'userType': rec['userType'], 'department': rec['department'],
                 })
                 # .get() defaults keep this safe for any archived day not yet
                 # migrated to carry 'absent'/'onLeave' (pre-1-Sept-2026 files).
-                absent   = rec.get('absent', 0)
-                on_leave = rec.get('onLeave', 0)
+                if rec['present']:
+                    if 2 > a['level']:
+                        a['present'], a['absent'], a['onLeave'], a['level'] = 1, 0, 0, 2
+                    if rec.get('deduction'):
+                        a['deduction'] = 1
+                elif rec.get('onLeave'):
+                    if 1 > a['level']:
+                        a['present'], a['absent'], a['onLeave'], a['level'] = 0, 0, 1, 1
+                elif rec.get('absent'):
+                    if 0 > a['level']:
+                        a['present'], a['absent'], a['onLeave'], a['level'] = 0, 1, 0, 0
+
+            for (vid, sid), a in day_agg.items():
+                store = by_store.setdefault(vid, {})
+                pk = store.setdefault(sid, {
+                    'shopperId': sid, 'name': a['name'], 'userType': a['userType'],
+                    'department': a['department'],
+                    'values': [0] * len(date_labels), 'deductions': [0] * len(date_labels),
+                    'absences': [0] * len(date_labels), 'onLeaves': [0] * len(date_labels),
+                })
                 if period == 'mtd':
-                    pk['values'][i]     = min(1, pk['values'][i] + rec['present'])
-                    pk['deductions'][i] = min(1, pk['deductions'][i] + (rec['present'] and rec['deduction']))
-                    pk['absences'][i]   = min(1, pk['absences'][i] + absent)
-                    pk['onLeaves'][i]   = min(1, pk['onLeaves'][i] + on_leave)
+                    pk['values'][i]     = min(1, pk['values'][i] + a['present'])
+                    pk['deductions'][i] = min(1, pk['deductions'][i] + a['deduction'])
+                    pk['absences'][i]   = min(1, pk['absences'][i] + a['absent'])
+                    pk['onLeaves'][i]   = min(1, pk['onLeaves'][i] + a['onLeave'])
                 else:
-                    pk['values'][i]     += rec['present']
-                    pk['deductions'][i] += (rec['present'] and rec['deduction'])
-                    pk['absences'][i]   += absent
-                    pk['onLeaves'][i]   += on_leave
+                    pk['values'][i]     += a['present']
+                    pk['deductions'][i] += a['deduction']
+                    pk['absences'][i]   += a['absent']
+                    pk['onLeaves'][i]   += a['onLeave']
 
     return {
         'dates': date_labels,
