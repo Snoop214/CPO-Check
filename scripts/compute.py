@@ -3,7 +3,7 @@ talabat LS — CPO Compute Script
 Reads Google Sheets → computes CPO/UTR → writes JSON files to data/
 Run by GitHub Actions on schedule, or locally for testing.
 """
-import json, os, math, re, sys, calendar
+import json, os, math, re, sys, calendar, glob
 from datetime import datetime, date, timedelta
 from dateutil.relativedelta import relativedelta
 import gspread
@@ -11,20 +11,33 @@ from google.oauth2.service_account import Credentials
 
 # ── Sheet IDs ────────────────────────────────────────────────────
 SHEET_IDS = {
-    'orders':     '1mDnzwA0fycVbo-1hIxvKzoLoi5U8pv12I6Fazq8CKOI',
-    'attendance': '1LRlCJbv7nnabo_doQ2VAP4jMl80fF-ZpLcsqIE6FO9w',
-    'master':     '10swg2HotxTSmIMPGQt6AxARFQyfTbvt7504tFjysmGs',
-    'hourly':     '1n4GopL6gSsSw_sauMkHKVfcF6IDYI84skyGMdfC4hqA',
+    'orders':         '1mDnzwA0fycVbo-1hIxvKzoLoi5U8pv12I6Fazq8CKOI',
+    'attendance':     '1LRlCJbv7nnabo_doQ2VAP4jMl80fF-ZpLcsqIE6FO9w',  # legacy MTD/Weekly/Monthly Know tabs — no longer read, kept for reference only
+    'attendance_log': '1_6EI-J9_QRTo1HHl1nUoHRzo8vXZnPUQYRLBk5m0grg',  # "Daily Attendance" — flat per-shift log, replaces the 3 Know tabs above
+    'master':         '10swg2HotxTSmIMPGQt6AxARFQyfTbvt7504tFjysmGs',
+    'hourly':         '1n4GopL6gSsSw_sauMkHKVfcF6IDYI84skyGMdfC4hqA',
 }
 # Sheet tabs for hourly/timing sheet:
 # Sheet1 = Hourly GMV (Chain ID, Chain Name, Vendor ID, Vendor Name, then cols 0-23 = GMV per hour)
 # Sheet2 = Hourly Orders (Chain ID, Chain Name, Vendor ID, Vendor Name, then cols 0-23 = avg daily orders per hour)
 # Sheet3 = Store timing (Vendor ID, Vendor Name, Day of Week, Schedule End, Schedule Start, Shift Hours)
 ORDER_TABS  = {'mtd': 'MTD Order',  'weekly': 'Weekly order',  'monthly': 'Monthly order'}
-ATTEND_TABS = {'mtd': 'MTD Know',   'weekly': 'Weekly Know',   'monthly': 'Monthly Know'}
 
 DATA_DIR   = os.path.join(os.path.dirname(__file__), '..', 'data')
 CONFIG_DIR = os.path.join(os.path.dirname(__file__), '..', 'config')
+
+# Attendance is archived one calendar day at a time under data/daily_attendance/
+# so weekly/monthly totals are built by SUMMING already-archived days rather than
+# re-reading the live "Daily Attendance" sheet for old dates. The live sheet is
+# only expected to hold a rolling window (~40-50 days); once a day is archived
+# and older than FREEZE_DAYS, it is never overwritten again — this is what stops
+# a past month from silently going to zero if the live sheet's window moves on.
+DAILY_ARCHIVE_DIR = os.path.join(DATA_DIR, 'daily_attendance')
+FREEZE_DAYS = 3
+# A picker doesn't get paid for 1 hour if they clock in >30min after their
+# scheduled start, or clock out >30min before their scheduled end (either
+# trigger, capped at 1 hour deducted per day, never 2).
+LATE_EARLY_THRESHOLD_MIN = 30
 
 SCOPES = [
     'https://www.googleapis.com/auth/spreadsheets.readonly',
@@ -75,6 +88,20 @@ def normalize_date(v):
     if re.match(r'^\d{4}-\d{2}-\d{2}$', s): return s
     if re.match(r'^\d{4}-\d{2}$', s): return s + '-01'
     return s
+
+def _parse_dt(s):
+    """Parse a 'YYYY-MM-DD H:MM:SS' (or date-only) string into a datetime.
+    Returns None for blank/unparseable values (e.g. Absent rows have no
+    actual clock times)."""
+    s = str(s).strip()
+    if not s:
+        return None
+    for fmt in ('%Y-%m-%d %H:%M:%S', '%Y-%m-%d %H:%M', '%Y-%m-%d'):
+        try:
+            return datetime.strptime(s, fmt)
+        except ValueError:
+            continue
+    return None
 
 def find_col(headers, names):
     hl = [str(h).strip().lower() for h in headers]
@@ -196,47 +223,157 @@ def read_order_data(gc, period):
         }
     return {'dates': [d for _, d in dates], 'stores': stores}
 
-def read_attendance_data(gc, period):
-    print(f'  reading attendance {period}...')
-    sh = gc.open_by_key(SHEET_IDS['attendance'])
-    ws = sh.worksheet(ATTEND_TABS[period])
+def read_daily_attendance_log(gc):
+    """Read the flat 'Daily Attendance' shift-log sheet — one row per employee
+    per scheduled shift/day, with Status (Absent/On Leave/Present - On Time/
+    Present - Late/Scheduled) and scheduled + actual clock-in/out datetimes.
+    Groups rows by calendar day. This single sheet replaces the old MTD Know /
+    Weekly Know / Monthly Know pivot tabs.
+
+    Also flags the late-start/early-leave pay deduction per shift: no pay for
+    1 hour if actual clock-in is >30min after Scheduled Start Time, OR actual
+    clock-out is >30min before Scheduled End Time Time (either trigger, never
+    both stacked — capped at 1 hour)."""
+    print('  reading daily attendance log...')
+    sh = gc.open_by_key(SHEET_IDS['attendance_log'])
+    ws = sh.get_worksheet(0)
     data = ws.get_all_values()
-    if len(data) < 3: return {'dates': [], 'byStore': {}, 'isMonthly': period == 'monthly'}
+    if len(data) < 2:
+        return {}
+    headers = data[0]
+    c_name    = find_col(headers, ['employee name'])
+    c_type    = find_col(headers, ['user type'])
+    c_dept    = find_col(headers, ['department', 'dept', '3pl'])
+    c_sid     = find_col(headers, ['shopper id'])
+    c_bid     = find_col(headers, ['shift branch id'])
+    c_status  = find_col(headers, ['status'])
+    c_ci_time = find_col(headers, ['actual clockin time'])
+    c_co_time = find_col(headers, ['actual clockout time'])
+    c_sch_end = find_col(headers, ['scheduled end time time'])
+    c_sch_str = find_col(headers, ['scheduled start time'])
 
-    date_row, start_col = find_date_row(data)
-    if date_row is None: return {'dates': [], 'byStore': {}, 'isMonthly': period == 'monthly'}
-    dates = extract_dates(data, date_row, start_col)
+    by_date = {}
+    for row in data[1:]:
+        def g(ci):
+            return str(row[ci]).strip() if 0 <= ci < len(row) else ''
+        bid = g(c_bid)
+        sid = g(c_sid)
+        if not bid or not sid:
+            continue
+        sched_start = _parse_dt(g(c_sch_str))
+        if sched_start is None:
+            continue
+        shift_date = sched_start.strftime('%Y-%m-%d')
 
-    hr = date_row + 1
-    if hr >= len(data): hr = 1
-    headers = data[hr]
-    c_name  = find_col(headers, ['employee name'])
-    c_type  = find_col(headers, ['user type'])
-    c_dept  = find_col(headers, ['department', 'dept', '3pl'])
-    c_sid   = find_col(headers, ['shopper id'])
-    c_bid   = find_col(headers, ['shift branch id'])
+        status = g(c_status).lower()
+        present = 1 if status.startswith('present') else 0
+        deduction = 0
+        if present:
+            actual_in  = _parse_dt(g(c_ci_time))
+            actual_out = _parse_dt(g(c_co_time))
+            sched_end  = _parse_dt(g(c_sch_end))
+            late_min  = (actual_in - sched_start).total_seconds() / 60 if actual_in else 0
+            early_min = (sched_end - actual_out).total_seconds() / 60 if (actual_out and sched_end) else 0
+            if late_min > LATE_EARLY_THRESHOLD_MIN or early_min > LATE_EARLY_THRESHOLD_MIN:
+                deduction = 1
 
-    by_store = {}
-    for row in data[hr + 1:]:
-        bid = str(row[c_bid]).strip() if c_bid >= 0 and c_bid < len(row) else ''
-        sid = str(row[c_sid]).strip() if c_sid >= 0 and c_sid < len(row) else ''
-        if not bid or not sid: continue
-        values = []
-        for col, _ in dates:
-            try:
-                raw = float(str(row[col]).replace(',', '')) if col < len(row) else 0
-            except: raw = 0
-            if period == 'mtd' and raw >= 1: raw = 1
-            values.append(raw)
-        if bid not in by_store: by_store[bid] = []
-        by_store[bid].append({
+        by_date.setdefault(shift_date, []).append({
+            'vendorId':   bid,
             'shopperId':  sid,
-            'name':       str(row[c_name]).strip()  if c_name >= 0 and c_name < len(row) else '',
-            'userType':   str(row[c_type]).strip()  if c_type >= 0 and c_type < len(row) else 'Picker',
-            'department': str(row[c_dept]).strip()  if c_dept >= 0 and c_dept < len(row) else '',
-            'values':     values,
+            'name':       g(c_name),
+            'userType':   g(c_type) or 'Picker',
+            'department': g(c_dept),
+            'present':    present,
+            'deduction':  deduction,
         })
-    return {'dates': [d for _, d in dates], 'byStore': by_store, 'isMonthly': period == 'monthly'}
+    print(f'    {len(data) - 1} rows -> {len(by_date)} distinct days')
+    return by_date
+
+def archive_daily_attendance(by_date):
+    """Write/refresh per-day archive files under data/daily_attendance/. Days
+    older than FREEZE_DAYS are never overwritten once archived — this is what
+    keeps a past month's numbers from silently going to zero if the live
+    sheet's rolling window later moves past that date. Days without an
+    existing file are always written regardless of age, so a gap left by a
+    previously-failed run self-heals as long as the live sheet still shows it."""
+    os.makedirs(DAILY_ARCHIVE_DIR, exist_ok=True)
+    today = date.today()
+    written, frozen = 0, 0
+    for d, records in by_date.items():
+        try:
+            d_date = datetime.strptime(d, '%Y-%m-%d').date()
+        except ValueError:
+            continue
+        path = os.path.join(DAILY_ARCHIVE_DIR, f'{d}.json')
+        age_days = (today - d_date).days
+        if os.path.exists(path) and age_days > FREEZE_DAYS:
+            frozen += 1
+            continue
+        with open(path, 'w') as f:
+            json.dump({'date': d, 'records': records}, f, separators=(',', ':'))
+        written += 1
+    print(f'  attendance archive: wrote/refreshed {written} days, {frozen} already-frozen days left untouched')
+
+def load_archived_days(start_date, end_date):
+    """Load archived daily records for [start_date, end_date] inclusive.
+    Missing days are simply absent from the result."""
+    out = {}
+    if not os.path.isdir(DAILY_ARCHIVE_DIR):
+        return out
+    d = datetime.strptime(start_date, '%Y-%m-%d').date()
+    end = datetime.strptime(end_date, '%Y-%m-%d').date()
+    while d <= end:
+        ds = d.isoformat()
+        path = os.path.join(DAILY_ARCHIVE_DIR, f'{ds}.json')
+        if os.path.exists(path):
+            with open(path) as f:
+                out[ds] = json.load(f).get('records', [])
+        d += timedelta(days=1)
+    return out
+
+def build_attend_struct(archived_by_date, date_labels, period):
+    """Turn archived daily records into the same {'dates','byStore'} shape
+    compute_cpo already expects, so compute_cpo's per-picker logic barely has
+    to change. 'values' and 'deductions' are parallel arrays aligned to
+    date_labels (the same date axis the orders sheet already uses):
+      - period == 'mtd': each label is one calendar day; value is that day's
+        present flag (0/1, capped — a person can't be >1 present on one day).
+      - period in ('weekly','monthly'): each label is a period-end/period-
+        start marker; value is the SUM of present-days across that whole
+        period (matches how the old Weekly/Monthly Know tabs pre-aggregated)."""
+    by_store = {}
+    for i, label in enumerate(date_labels):
+        if period == 'mtd':
+            day_list = [label]
+        elif period == 'weekly':
+            end = datetime.strptime(label[:10], '%Y-%m-%d').date()
+            day_list = [(end - timedelta(days=k)).isoformat() for k in range(6, -1, -1)]
+        else:  # monthly
+            y, m = int(label[:4]), int(label[5:7])
+            last_day = calendar.monthrange(y, m)[1]
+            day_list = [f'{y}-{m:02d}-{d:02d}' for d in range(1, last_day + 1)]
+
+        for ds in day_list:
+            for rec in archived_by_date.get(ds, []):
+                vid, sid = rec['vendorId'], rec['shopperId']
+                store = by_store.setdefault(vid, {})
+                pk = store.setdefault(sid, {
+                    'shopperId': sid, 'name': rec['name'], 'userType': rec['userType'],
+                    'department': rec['department'],
+                    'values': [0] * len(date_labels), 'deductions': [0] * len(date_labels),
+                })
+                if period == 'mtd':
+                    pk['values'][i]     = min(1, pk['values'][i] + rec['present'])
+                    pk['deductions'][i] = min(1, pk['deductions'][i] + (rec['present'] and rec['deduction']))
+                else:
+                    pk['values'][i]     += rec['present']
+                    pk['deductions'][i] += (rec['present'] and rec['deduction'])
+
+    return {
+        'dates': date_labels,
+        'byStore': {vid: list(pk_map.values()) for vid, pk_map in by_store.items()},
+        'isMonthly': period == 'monthly',
+    }
 
 def read_master_data(gc):
     print('  reading master data...')
@@ -502,6 +639,8 @@ def compute_cpo(period, date_index, orders, attend, master, cfg, is_mtd=False):
         picker_count = 0
         total_present = 0
         total_hours = 0
+        total_deduction_days = 0
+        total_deduction_cost = 0
         dept_set = set()
         picker_days_list = []
         daily_counts = {}
@@ -519,6 +658,7 @@ def compute_cpo(period, date_index, orders, attend, master, cfg, is_mtd=False):
                 present = 0
                 hol_days = 0
                 ram_days = 0
+                deduction_days = 0
                 if is_mtd:
                     for di, dl in enumerate(dates):
                         if dl not in valid_date_set: continue
@@ -533,6 +673,9 @@ def compute_cpo(period, date_index, orders, attend, master, cfg, is_mtd=False):
                                 else:
                                     present += day_val
                                 daily_counts[dl] = daily_counts.get(dl, 0) + 1
+                                ded_arr = pk.get('deductions', [])
+                                if a_idx < len(ded_arr):
+                                    deduction_days += ded_arr[a_idx]
                 else:
                     target_date = dates[date_index] if date_index < len(dates) else None
                     a_idx = attend_date_map.get(target_date)
@@ -551,6 +694,9 @@ def compute_cpo(period, date_index, orders, attend, master, cfg, is_mtd=False):
                                 ram_days = day_val
                             else:
                                 present = day_val
+                            ded_arr = pk.get('deductions', [])
+                            if a_idx < len(ded_arr):
+                                deduction_days = ded_arr[a_idx]
 
                 total_p = present + hol_days + ram_days
                 if total_p > 0:
@@ -558,15 +704,22 @@ def compute_cpo(period, date_index, orders, attend, master, cfg, is_mtd=False):
                     ot_mult    = vm.get('ot_mult', 1.5)
                     hol_extra  = hol_days * daily_rate * (vm.get('holiday_ot_mult', ot_mult) - 1) if vm.get('holiday_ot', True) else 0
                     ram_extra  = 0
+                    hr_rate    = daily_rate / v_hours if v_hours > 0 else 0
                     if ram_days > 0 and vm.get('ramadan_ot'):
                         r_hrs     = vm.get('ramadan_hours', v_hours)
-                        hr_rate   = daily_rate / v_hours if v_hours > 0 else 0
                         ram_extra = ram_days * max(0, r_hrs - v_hours) * hr_rate * ot_mult
-                    this_cost      = daily_rate * total_p + hol_extra + ram_extra
+                    # Late-start/early-leave rule: no pay for 1 hour on any day that
+                    # triggered it (never more than 1 hour/day, and never more days
+                    # of deduction than days actually present).
+                    deduction_days = min(deduction_days, total_p)
+                    deduction_cost = deduction_days * hr_rate
+                    this_cost      = daily_rate * total_p + hol_extra + ram_extra - deduction_cost
                     picker_cost   += this_cost
                     picker_count  += 1
                     total_present += total_p
                     total_hours   += total_p * v_hours
+                    total_deduction_days += deduction_days
+                    total_deduction_cost += deduction_cost
                     dept_set.add(dept)
                     picker_days_list.append({'days': total_p, 'dept': dept, 'rate': rate, 'hours': v_hours})
                     bv = by_vendor.setdefault(dept, {'cost': 0, 'pickerCount': 0, 'presentDays': 0})
@@ -624,6 +777,8 @@ def compute_cpo(period, date_index, orders, attend, master, cfg, is_mtd=False):
                 'champAlloc':  round(champ_alloc),
                 'supAlloc':    round(sup_alloc),
                 'utr':         round(utr, 1),
+                'lateEarlyDeductionDays': round(total_deduction_days, 2),
+                'lateEarlyDeductionCost': round(total_deduction_cost),
                 'relieverInfo': reliever_info,
                 'byVendor': {v: {'cost': round(d['cost']), 'pickerCount': d['pickerCount'],
                                   'presentDays': round(d['presentDays'], 2)}
@@ -658,10 +813,22 @@ def main():
     master = read_master_data(gc)
     raw = {}
     for period in ('mtd', 'weekly', 'monthly'):
-        raw[period] = {
-            'orders': read_order_data(gc, period),
-            'attend': read_attendance_data(gc, period),
-        }
+        raw[period] = {'orders': read_order_data(gc, period)}
+
+    # Attendance: one flat shift-log sheet + a permanent per-day archive,
+    # instead of the old MTD/Weekly/Monthly Know pivot tabs. The live sheet
+    # only needs to hold a rolling window (~40-50 days) — everything older
+    # is safe because it's already frozen in data/daily_attendance/.
+    attendance_log = read_daily_attendance_log(gc)
+    archive_daily_attendance(attendance_log)
+    archive_files = glob.glob(os.path.join(DAILY_ARCHIVE_DIR, '*.json'))
+    known_days = sorted(os.path.splitext(os.path.basename(f))[0] for f in archive_files)
+    archived_by_date = load_archived_days(known_days[0], known_days[-1]) if known_days else {}
+
+    for period in ('mtd', 'weekly', 'monthly'):
+        date_labels = raw[period]['orders'].get('dates', [])
+        raw[period]['attend'] = build_attend_struct(archived_by_date, date_labels, period)
+
     hourly_data = read_hourly_data(gc)
 
     # 2. Save raw cache files (for archive/debug)
