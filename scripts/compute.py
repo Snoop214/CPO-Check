@@ -869,11 +869,13 @@ def main():
     # 7. Write meta file — date lists, sync info, timestamp
     # Merge with any existing historical JSON files in data/ so old weeks/months
     # are never lost when the Google Sheet only returns recent data.
-    import glob, re as _re
+    # (glob and re are already imported at module level — no local import here,
+    # since a local `import glob` would shadow the module-level one for the
+    # ENTIRE function, breaking the earlier glob.glob() call above.)
     def _collect_existing(pattern):
         found = set()
         for f in glob.glob(os.path.join(DATA_DIR, pattern)):
-            m = _re.search(r'(\d{4}-\d{2}-\d{2})', os.path.basename(f))
+            m = re.search(r'(\d{4}-\d{2}-\d{2})', os.path.basename(f))
             if m:
                 found.add(m.group(1))
         return sorted(found)
