@@ -721,7 +721,9 @@ def compute_cpo(period, date_index, orders, attend, master, cfg, is_mtd=False):
                     total_deduction_days += deduction_days
                     total_deduction_cost += deduction_cost
                     dept_set.add(dept)
-                    picker_days_list.append({'days': total_p, 'dept': dept, 'rate': rate, 'hours': v_hours})
+                    picker_days_list.append({'days': total_p, 'dept': dept, 'rate': rate, 'hours': v_hours,
+                                              'shopperId': pk.get('shopperId', ''), 'name': pk.get('name', ''),
+                                              'deductionDays': deduction_days})
                     bv = by_vendor.setdefault(dept, {'cost': 0, 'pickerCount': 0, 'presentDays': 0})
                     bv['cost']        += this_cost
                     bv['pickerCount'] += 1
@@ -783,6 +785,9 @@ def compute_cpo(period, date_index, orders, attend, master, cfg, is_mtd=False):
                 'byVendor': {v: {'cost': round(d['cost']), 'pickerCount': d['pickerCount'],
                                   'presentDays': round(d['presentDays'], 2)}
                              for v, d in by_vendor.items()},
+                'pickers': [{'shopperId': p['shopperId'], 'name': p['name'], 'department': p['dept'],
+                             'presentDays': round(p['days'], 2), 'deductionDays': round(p.get('deductionDays', 0), 2)}
+                            for p in picker_days_list],
             })
 
     # MTD last valid date

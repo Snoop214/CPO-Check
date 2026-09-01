@@ -784,8 +784,8 @@ function renderDashboard(){
       :'';
     var missingAtt=r.orders>0&&r.pickerCount===0
       ?'<span title="Missing attendance data" style="color:var(--warning);margin-left:4px"><i class="fas fa-exclamation-triangle"></i></span>':'' ;
-    html+='<tr'+(rowStyle?' style="'+rowStyle+'"':'')+' >';
-    html+='<td>'+flag+r.vendorId+'</td><td>'+r.storeName+missingAtt+'</td><td>'+r.chain+'</td><td>'+r.city+'</td>';
+    html+='<tr class="store-row" onclick="togglePickerRow(this)" style="cursor:pointer'+(rowStyle?';'+rowStyle:'')+'">';
+    html+='<td><i class="fas fa-chevron-right toggle-caret" style="margin-right:6px;font-size:10px;color:var(--muted)"></i>'+flag+r.vendorId+'</td><td>'+r.storeName+missingAtt+'</td><td>'+r.chain+'</td><td>'+r.city+'</td>';
     html+='<td>'+r.dept3pl+'</td><td>'+r.supervisor+'</td><td>'+r.champion+'</td>';
     var ri=r.relieverInfo||{};
     var permCount=ri.regularPickerCount>0?ri.regularPickerCount:(r.maxDailyPickers||r.pickerCount);
@@ -801,9 +801,32 @@ function renderDashboard(){
     html+='<td style="text-align:right"><span class="badge '+cpoCls(r.loadedCPO)+'">'+_getCurrency()+' '+r.loadedCPO.toFixed(2)+'</span></td>';
     html+='<td style="text-align:right"><span class="badge utr-badge">'+(r.utr?r.utr.toFixed(1):'—')+'</span></td>';
     html+='</tr>';
+    // Expandable picker-level detail (Shopper ID, Name, 3PL, Present Days, Deduction Days)
+    html+='<tr class="picker-detail-row" style="display:none"><td colspan="'+cols.length+'" style="padding:0;background:#faf9f6;border-bottom:2px solid var(--border)">';
+    var pks=r.pickers||[];
+    if(pks.length){
+      html+='<table style="width:100%;font-size:11px;border-collapse:collapse"><thead><tr style="background:#f1ede4">';
+      html+='<th style="padding:5px 10px;text-align:left;font-weight:600">Shopper ID</th><th style="padding:5px 10px;text-align:left;font-weight:600">Picker Name</th><th style="padding:5px 10px;text-align:left;font-weight:600">3PL</th><th style="padding:5px 10px;text-align:right;font-weight:600">Present Days</th><th style="padding:5px 10px;text-align:right;font-weight:600">Deduction Days</th></tr></thead><tbody>';
+      pks.forEach(function(p){
+        html+='<tr><td style="padding:4px 10px">'+(p.shopperId||'—')+'</td><td style="padding:4px 10px">'+(p.name||'—')+'</td><td style="padding:4px 10px">'+(p.department||'—')+'</td><td style="padding:4px 10px;text-align:right">'+(p.presentDays!=null?p.presentDays:'—')+'</td><td style="padding:4px 10px;text-align:right">'+(p.deductionDays||0)+'</td></tr>';
+      });
+      html+='</tbody></table>';
+    }else{
+      html+='<div style="padding:10px 14px;color:var(--muted);font-size:11px">No picker-level detail available for this period.</div>';
+    }
+    html+='</td></tr>';
   });
   html+='</tbody></table></div></div>';
   document.getElementById('mainContent').innerHTML=html;
+}
+
+function togglePickerRow(rowEl){
+  var next=rowEl.nextElementSibling;
+  if(!next||!next.classList.contains('picker-detail-row'))return;
+  var isOpen=next.style.display!=='none';
+  next.style.display=isOpen?'none':'table-row';
+  var caret=rowEl.querySelector('.toggle-caret');
+  if(caret)caret.className='fas fa-chevron-'+(isOpen?'right':'down')+' toggle-caret';
 }
 
 function exportCSV(){
