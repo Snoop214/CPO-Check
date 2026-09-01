@@ -31,6 +31,11 @@ jobs:
           GOOGLE_CREDENTIALS_JSON: ${{ secrets.GOOGLE_CREDENTIALS_JSON }}
         run: python scripts/compute.py
 
+      - name: Sync chain/vendor rollups to CPO Working Sheet
+        env:
+          GOOGLE_CREDENTIALS_JSON: ${{ secrets.GOOGLE_CREDENTIALS_JSON }}
+        run: python scripts/sync_rollups.py
+
       - name: Commit & push data files
         run: |
           git config user.name  "github-actions[bot]"

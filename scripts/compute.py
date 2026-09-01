@@ -505,6 +505,9 @@ def compute_cpo(period, date_index, orders, attend, master, cfg, is_mtd=False):
         dept_set = set()
         picker_days_list = []
         daily_counts = {}
+        by_vendor = {}  # vendor name -> {cost, pickerCount, presentDays} -- true per-vendor
+                        # attribution (built from the same per-picker loop below), used for
+                        # vendor-level rollups so multi-vendor stores don't get double-counted.
 
         if sp:
             for pk in sp:
@@ -559,12 +562,17 @@ def compute_cpo(period, date_index, orders, attend, master, cfg, is_mtd=False):
                         r_hrs     = vm.get('ramadan_hours', v_hours)
                         hr_rate   = daily_rate / v_hours if v_hours > 0 else 0
                         ram_extra = ram_days * max(0, r_hrs - v_hours) * hr_rate * ot_mult
-                    picker_cost   += daily_rate * total_p + hol_extra + ram_extra
+                    this_cost      = daily_rate * total_p + hol_extra + ram_extra
+                    picker_cost   += this_cost
                     picker_count  += 1
                     total_present += total_p
                     total_hours   += total_p * v_hours
                     dept_set.add(dept)
                     picker_days_list.append({'days': total_p, 'dept': dept, 'rate': rate, 'hours': v_hours})
+                    bv = by_vendor.setdefault(dept, {'cost': 0, 'pickerCount': 0, 'presentDays': 0})
+                    bv['cost']        += this_cost
+                    bv['pickerCount'] += 1
+                    bv['presentDays'] += total_p
 
         max_daily_pickers = 1
         if is_mtd and daily_counts:
@@ -617,6 +625,9 @@ def compute_cpo(period, date_index, orders, attend, master, cfg, is_mtd=False):
                 'supAlloc':    round(sup_alloc),
                 'utr':         round(utr, 1),
                 'relieverInfo': reliever_info,
+                'byVendor': {v: {'cost': round(d['cost']), 'pickerCount': d['pickerCount'],
+                                  'presentDays': round(d['presentDays'], 2)}
+                             for v, d in by_vendor.items()},
             })
 
     # MTD last valid date
