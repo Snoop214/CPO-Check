@@ -20,13 +20,29 @@ store serviced by more than one 3PL, that store's full order count is
 credited to each of its vendors. This only affects a handful of
 multi-vendor stores; it's a known approximation, not a bug.
 """
-import glob, json, os, re, sys
+import glob, json, os, re
 
 import gspread
 from google.oauth2.service_account import Credentials
 
-sys.path.insert(0, os.path.dirname(__file__))
-from compute import get_client  # reuse the same auth as compute.py
+# Needs write access (compute.py's own get_client() is read-only, since it
+# never writes) -- separate scopes/client here rather than widening
+# compute.py's credentials beyond what it actually needs.
+WRITE_SCOPES = [
+    'https://www.googleapis.com/auth/spreadsheets',
+    'https://www.googleapis.com/auth/drive',
+]
+
+def get_write_client():
+    creds_json = os.environ.get('GOOGLE_CREDENTIALS_JSON')
+    if creds_json:
+        info = json.loads(creds_json)
+    else:
+        path = os.path.join(os.path.dirname(__file__), 'credentials.json')
+        with open(path) as f:
+            info = json.load(f)
+    creds = Credentials.from_service_account_info(info, scopes=WRITE_SCOPES)
+    return gspread.authorize(creds)
 
 ROLLUP_SHEET_ID = '1_U-fuU39uJHr-1GQqAJ6guh00zPV9KkTfSZzFIQBuxI'  # "CPO Working Sheet"
 DATA_DIR = os.path.join(os.path.dirname(__file__), '..', 'data')
@@ -124,7 +140,7 @@ def write_tab(sh, title, header, rows):
 
 def main():
     print('Rollup sync starting...')
-    gc = get_client()
+    gc = get_write_client()
     sh = gc.open_by_key(ROLLUP_SHEET_ID)
 
     weekly = load_period_files('cpo_weekly_*.json',
