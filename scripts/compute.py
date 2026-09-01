@@ -58,8 +58,15 @@ def save_json(filename, obj):
     print(f'  saved {filename}')
 
 # ── Helpers ──────────────────────────────────────────────────────
+# Known misspellings/variants in the ops attendance sheet that don't match
+# the vendor name spelling used in config/app_config.json's vendor_rates.
+DEPT_ALIASES = {
+    'truemax': 'trumax',  # attendance sheet spells it "Truemax"; vendor config uses "Trumax"
+}
+
 def normalize_dept(s):
-    return re.sub(r'\s+', ' ', str(s or '').strip().lower())
+    nd = re.sub(r'\s+', ' ', str(s or '').strip().lower())
+    return DEPT_ALIASES.get(nd, nd)
 
 def normalize_date(v):
     if isinstance(v, (datetime, date)):
