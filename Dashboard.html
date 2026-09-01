@@ -120,6 +120,7 @@ tbody tr:hover{background:#f0ebe4}
       <button class="active" onclick="switchView('dashboard')"><i class="fas fa-chart-bar" style="margin-right:4px"></i>Dashboard</button>
       <button onclick="switchView('historical')"><i class="fas fa-history" style="margin-right:4px"></i>Historical &amp; Trends</button>
       <button onclick="switchView('optimizer')"><i class="fas fa-calculator" style="margin-right:4px"></i>Cost Optimizer</button>
+      <button onclick="switchView('paymentdetail')"><i class="fas fa-money-check-alt" style="margin-right:4px"></i>Payment Detail</button>
       <button onclick="switchView('settings')" id="settingsNavBtn"><i class="fas fa-cog" style="margin-right:4px"></i>Settings</button>
       <button onclick="switchView('dataformat')"><i class="fas fa-table" style="margin-right:4px"></i>Data Format</button>
     </div>
@@ -705,6 +706,216 @@ function exportCSV(){
   var a=document.createElement('a');
   a.href=URL.createObjectURL(new Blob([csv],{type:'text/csv'}));
   a.download='CPO_'+(cpo.dateLabel||'').replace(/[^a-zA-Z0-9]/g,'_')+'.csv';
+  a.click();
+}
+
+// ================================================================
+// PAYMENT DETAIL — flat, filterable picker-level view (present/absent/
+// on-leave days, deduction hours+cost, total cost) across Daily/Weekly/
+// Monthly. Built from the same per-store 'pickers' array compute.py
+// already emits — no separate server endpoint needed.
+// ================================================================
+function renderPaymentDetail(){
+  if(!APP.pd)APP.pd={period:'weekly',dateIdx:null,rows:[],filtered:[],sortCol:'presentDays',sortAsc:false,loaded:false,dateLabel:''};
+  var pd=APP.pd;
+  var html='<div class="content">';
+  html+='<div style="background:var(--cream);border-radius:var(--radius);padding:16px;margin-bottom:16px;display:flex;flex-wrap:wrap;gap:14px;align-items:flex-end">';
+  html+='<div><div style="font-size:10px;font-weight:600;color:var(--muted);text-transform:uppercase;margin-bottom:4px">Period</div>';
+  html+='<div class="period-toggle" id="pdPeriodToggle">';
+  [['mtd','Daily'],['weekly','Weekly'],['monthly','Monthly']].forEach(function(pair){
+    html+='<button data-p="'+pair[0]+'" class="'+(pd.period===pair[0]?'active':'')+'" onclick="pdSetPeriod(\''+pair[0]+'\')">'+pair[1]+'</button>';
+  });
+  html+='</div></div>';
+  html+='<div class="fg"><label>Select</label><select id="pdDatePicker" style="background-image:none;padding-right:8px"></select>';
+  html+='<button class="btn btn-primary btn-sm" onclick="pdCompute()" style="white-space:nowrap;margin-left:6px"><i class="fas fa-play"></i> Compute</button></div>';
+  html+='<div class="fg"><label>Chain</label><select id="pdChain" onchange="pdApplyFilters()"><option value="">All</option></select></div>';
+  html+='<div class="fg"><label>Store</label><select id="pdStore" onchange="pdApplyFilters()"><option value="">All</option></select></div>';
+  html+='<div class="fg"><label>3PL</label><select id="pd3PL" onchange="pdApplyFilters()"><option value="">All</option></select></div>';
+  html+='</div>';
+  html+='<div id="pdTableArea"><div class="empty-state"><i class="fas fa-money-check-alt" style="font-size:36px;display:block;margin-bottom:10px;opacity:.3"></i><p>Select a period/date and click <strong>Compute</strong> to load picker payment detail.</p></div></div>';
+  html+='</div>';
+  document.getElementById('mainContent').innerHTML=html;
+  pdPopulateDatePicker(pd.period);
+  if(pd.loaded){pdPopulateFilterOptions();pdRenderTable();}
+}
+
+function pdSetPeriod(period){
+  APP.pd.period=period;
+  APP.pd.loaded=false;
+  document.querySelectorAll('#pdPeriodToggle button').forEach(function(b){b.classList.toggle('active',b.dataset.p===period);});
+  pdPopulateDatePicker(period);
+  var area=document.getElementById('pdTableArea');
+  if(area)area.innerHTML='<div class="empty-state"><i class="fas fa-money-check-alt" style="font-size:36px;display:block;margin-bottom:10px;opacity:.3"></i><p>Select a date and click <strong>Compute</strong> to load picker payment detail.</p></div>';
+}
+
+function pdPopulateDatePicker(period){
+  var dates=APP.periodsData[period]?APP.periodsData[period].orderDates||[]:[];
+  var sel=document.getElementById('pdDatePicker');
+  if(!sel)return;
+  sel.innerHTML='';
+  for(var i=0;i<dates.length;i++){
+    var opt=document.createElement('option');
+    opt.value=i;
+    var lbl=dates[i]; if(lbl.length>=10)lbl=lbl.substring(0,10);
+    opt.textContent=lbl;
+    sel.appendChild(opt);
+  }
+  if(dates.length>0){
+    var lastIdx=dates.length-1;
+    sel.value=lastIdx;
+    APP.pd.dateIdx=lastIdx;
+  }
+}
+
+function pdCompute(){
+  var pd=APP.pd;
+  var sel=document.getElementById('pdDatePicker');
+  if(!sel)return;
+  pd.dateIdx=parseInt(sel.value,10);
+  if(isNaN(pd.dateIdx))return;
+  if(!APP.cache)APP.cache={};
+  var cacheKey='paydetail_'+pd.period+'_'+pd.dateIdx;
+  var cached=APP.cache[cacheKey];
+  if(cached){pdOnData(cached);return;}
+  var area=document.getElementById('pdTableArea');
+  if(area)area.innerHTML='<div class="loading"><div class="spinner"></div><div style="font-size:13px;color:var(--muted)">Loading picker payment detail...</div></div>';
+  google.script.run.withSuccessHandler(function(r){
+    if(!r.error)APP.cache[cacheKey]=r;
+    pdOnData(r);
+  }).withFailureHandler(function(e){
+    if(area)area.innerHTML='<div class="empty-state">'+(e.message||'Failed to load')+'</div>';
+  }).getCPOData(pd.period,pd.dateIdx,['Picker']);
+}
+
+function pdOnData(r){
+  var area=document.getElementById('pdTableArea');
+  if(r.error){if(area)area.innerHTML='<div class="empty-state">'+r.error+'</div>';return;}
+  var rows=[];
+  (r.data||[]).forEach(function(store){
+    (store.pickers||[]).forEach(function(p){
+      rows.push({
+        shopperId: p.shopperId||'', name: p.name||'', dept3pl: p.department||'',
+        vendorId: store.vendorId, storeName: store.storeName, chain: store.chain, city: store.city,
+        presentDays: p.presentDays||0, absentDays: p.absentDays||0, onLeaveDays: p.onLeaveDays||0,
+        deductionDays: p.deductionDays||0,
+        deductionHours: p.deductionHours!=null?p.deductionHours:(p.deductionDays||0),
+        deductionCost: p.deductionCost||0, cost: p.cost||0,
+      });
+    });
+  });
+  APP.pd.rows=rows;
+  APP.pd.dateLabel=r.dateLabel||'';
+  APP.pd.loaded=true;
+  pdPopulateFilterOptions();
+  pdApplyFilters();
+}
+
+function pdPopulateFilterOptions(){
+  var chains={},stores={},tpls={};
+  APP.pd.rows.forEach(function(r){
+    if(r.chain)chains[r.chain]=1;
+    if(r.storeName)stores[r.vendorId+'|'+r.storeName]=1;
+    if(r.dept3pl)tpls[r.dept3pl]=1;
+  });
+  var chainSel=document.getElementById('pdChain'), storeSel=document.getElementById('pdStore'), tplSel=document.getElementById('pd3PL');
+  if(chainSel){
+    var cv=chainSel.value; chainSel.innerHTML='<option value="">All</option>';
+    Object.keys(chains).sort().forEach(function(c){chainSel.innerHTML+='<option value="'+c+'">'+c+'</option>';});
+    if(cv)chainSel.value=cv;
+  }
+  if(storeSel){
+    var sv=storeSel.value; storeSel.innerHTML='<option value="">All</option>';
+    Object.keys(stores).sort().forEach(function(k){var parts=k.split('|');storeSel.innerHTML+='<option value="'+parts[0]+'">'+parts[1]+'</option>';});
+    if(sv)storeSel.value=sv;
+  }
+  if(tplSel){
+    var tv=tplSel.value; tplSel.innerHTML='<option value="">All</option>';
+    Object.keys(tpls).sort().forEach(function(t){tplSel.innerHTML+='<option value="'+t+'">'+t+'</option>';});
+    if(tv)tplSel.value=tv;
+  }
+}
+
+function pdApplyFilters(){
+  var chain=(document.getElementById('pdChain')||{}).value||'';
+  var vid=(document.getElementById('pdStore')||{}).value||'';
+  var tpl=(document.getElementById('pd3PL')||{}).value||'';
+  var q=((document.getElementById('pdSearch')||{}).value||'').toLowerCase().trim();
+  APP.pd.filtered=(APP.pd.rows||[]).filter(function(r){
+    if(chain&&r.chain!==chain)return false;
+    if(vid&&r.vendorId!==vid)return false;
+    if(tpl&&r.dept3pl!==tpl)return false;
+    if(q&&r.name.toLowerCase().indexOf(q)<0&&r.shopperId.toLowerCase().indexOf(q)<0)return false;
+    return true;
+  });
+  pdSortData();
+  pdRenderTable();
+}
+
+function pdSortData(){
+  var col=APP.pd.sortCol,asc=APP.pd.sortAsc;
+  APP.pd.filtered.sort(function(a,b){
+    var va=a[col],vb=b[col];
+    if(typeof va==='string'){va=va.toLowerCase();vb=(vb||'').toLowerCase();}
+    return va<vb?(asc?-1:1):va>vb?(asc?1:-1):0;
+  });
+}
+
+function pdSort(col){
+  APP.pd.sortAsc=(APP.pd.sortCol===col)?!APP.pd.sortAsc:(col==='name'||col==='storeName'||col==='chain'||col==='dept3pl');
+  APP.pd.sortCol=col;
+  pdSortData();
+  pdRenderTable();
+}
+
+function pdRenderTable(){
+  var area=document.getElementById('pdTableArea');
+  if(!area)return;
+  var data=APP.pd.filtered||[];
+  var cols=[
+    {k:'shopperId',l:'Shopper ID',a:'left'},{k:'name',l:'Picker Name',a:'left'},{k:'dept3pl',l:'3PL',a:'left'},
+    {k:'vendorId',l:'Vendor ID',a:'left'},{k:'storeName',l:'Store',a:'left'},{k:'chain',l:'Chain',a:'left'},
+    {k:'presentDays',l:'Present Days',a:'right'},{k:'absentDays',l:'Absent Days',a:'right'},{k:'onLeaveDays',l:'On Leave Days',a:'right'},
+    {k:'deductionHours',l:'Deduction Hrs',a:'right'},{k:'deductionCost',l:'Deduction Cost',a:'right'},{k:'cost',l:'Total Cost',a:'right'}
+  ];
+  var totalCost=data.reduce(function(s,r){return s+(r.cost||0);},0);
+  var totalDed=data.reduce(function(s,r){return s+(r.deductionCost||0);},0);
+  var html='<div style="margin-bottom:8px;font-size:12px;color:var(--muted)"><i class="fas fa-calendar-alt" style="margin-right:4px"></i>'+(APP.pd.dateLabel||'')+'</div>';
+  html+='<div class="table-wrap"><div class="table-toolbar">';
+  html+='<input class="search-input" id="pdSearch" placeholder="Search picker name or ID..." oninput="pdApplyFilters()">';
+  html+='<div style="display:flex;gap:6px;align-items:center"><span style="font-size:11px;color:var(--muted)">'+data.length+' pickers · '+_getCurrency()+' '+fmt(Math.round(totalCost))+' total cost · '+_getCurrency()+' '+fmt(Math.round(totalDed))+' deducted</span>';
+  html+='<button class="btn btn-sm btn-outline" onclick="pdExportCSV()"><i class="fas fa-download"></i> Export</button></div>';
+  html+='</div><div class="tbl-scroll"><table><thead><tr>';
+  cols.forEach(function(c){
+    var sorted=APP.pd.sortCol===c.k;
+    html+='<th onclick="pdSort(\''+c.k+'\')" class="'+(sorted?'sorted':'')+'" style="text-align:'+c.a+'">'+c.l+' <span style="opacity:.5;font-size:9px">'+(sorted?(APP.pd.sortAsc?'▲':'▼'):'⇅')+'</span></th>';
+  });
+  html+='</tr></thead><tbody>';
+  if(!data.length)html+='<tr><td colspan="'+cols.length+'" style="text-align:center;padding:40px;color:var(--muted)">No picker data matches filters — click Compute if you haven\'t loaded a period yet</td></tr>';
+  data.forEach(function(r){
+    html+='<tr>';
+    html+='<td>'+r.shopperId+'</td><td>'+r.name+'</td><td>'+r.dept3pl+'</td>';
+    html+='<td>'+r.vendorId+'</td><td>'+r.storeName+'</td><td>'+r.chain+'</td>';
+    html+='<td style="text-align:right">'+r.presentDays+'</td>';
+    html+='<td style="text-align:right'+(r.absentDays>0?';color:var(--danger);font-weight:600':'')+'">'+r.absentDays+'</td>';
+    html+='<td style="text-align:right'+(r.onLeaveDays>0?';color:#d97706;font-weight:600':'')+'">'+r.onLeaveDays+'</td>';
+    html+='<td style="text-align:right'+(r.deductionHours>0?';color:#ea580c;font-weight:600':'')+'">'+r.deductionHours+'</td>';
+    html+='<td style="text-align:right">'+_getCurrency()+' '+fmt(Math.round(r.deductionCost))+'</td>';
+    html+='<td style="text-align:right;font-weight:600">'+_getCurrency()+' '+fmt(Math.round(r.cost))+'</td>';
+    html+='</tr>';
+  });
+  html+='</tbody></table></div></div>';
+  area.innerHTML=html;
+}
+
+function pdExportCSV(){
+  var data=APP.pd.filtered||[];
+  var cols=['shopperId','name','dept3pl','vendorId','storeName','chain','city','presentDays','absentDays','onLeaveDays','deductionHours','deductionCost','cost'];
+  var hdrs=['Shopper ID','Picker Name','3PL','Vendor ID','Store','Chain','City','Present Days','Absent Days','On Leave Days','Deduction Hours','Deduction Cost','Total Cost'];
+  var csv=hdrs.join(',')+'\n';
+  data.forEach(function(r){csv+=cols.map(function(c){var v=r[c];return typeof v==='string'?'"'+v.replace(/"/g,'""')+'"':(v!=null?v:0);}).join(',')+'\n';});
+  var a=document.createElement('a');
+  a.href=URL.createObjectURL(new Blob([csv],{type:'text/csv'}));
+  a.download='PaymentDetail_'+(APP.pd.period||'')+'_'+(APP.pd.dateLabel||'').replace(/[^a-zA-Z0-9]/g,'_')+'.csv';
   a.click();
 }
 
@@ -2366,6 +2577,7 @@ function switchView(view){
     }
   }
   else if(view==='optimizer'){renderOptimizerView();}
+  else if(view==='paymentdetail'){renderPaymentDetail();}
   else if(view==='settings'){renderSettings();}
   else if(view==='dataformat'){renderDataFormat();}
 }

@@ -266,7 +266,12 @@ def read_daily_attendance_log(gc):
         shift_date = sched_start.strftime('%Y-%m-%d')
 
         status = g(c_status).lower()
-        present = 1 if status.startswith('present') else 0
+        present  = 1 if status.startswith('present') else 0
+        absent   = 1 if status == 'absent' else 0
+        on_leave = 1 if 'leave' in status else 0
+        # 'Scheduled' rows are shifts that haven't happened yet (no clock data
+        # possible) — not counted as present, absent, or on leave; they carry
+        # no attendance signal either way.
         deduction = 0
         if present:
             actual_in  = _parse_dt(g(c_ci_time))
@@ -283,7 +288,10 @@ def read_daily_attendance_log(gc):
             'name':       g(c_name),
             'userType':   g(c_type) or 'Picker',
             'department': g(c_dept),
+            'status':     g(c_status) or 'Unknown',
             'present':    present,
+            'absent':     absent,
+            'onLeave':    on_leave,
             'deduction':  deduction,
         })
     print(f'    {len(data) - 1} rows -> {len(by_date)} distinct days')
@@ -298,7 +306,7 @@ def archive_daily_attendance(by_date):
     previously-failed run self-heals as long as the live sheet still shows it."""
     os.makedirs(DAILY_ARCHIVE_DIR, exist_ok=True)
     today = date.today()
-    written, frozen = 0, 0
+    written, frozen, migrated = 0, 0, 0
     for d, records in by_date.items():
         try:
             d_date = datetime.strptime(d, '%Y-%m-%d').date()
@@ -307,12 +315,30 @@ def archive_daily_attendance(by_date):
         path = os.path.join(DAILY_ARCHIVE_DIR, f'{d}.json')
         age_days = (today - d_date).days
         if os.path.exists(path) and age_days > FREEZE_DAYS:
-            frozen += 1
-            continue
+            # One-time migration escape hatch: a frozen day is normally never
+            # touched again, but if its archive predates the 'status' field
+            # (added 1 Sept 2026 for real Present/Absent/On Leave tracking)
+            # and the live sheet still has this day's rows right now, upgrade
+            # it in place. Once every archived day has 'status', this branch
+            # never fires again — it's self-limiting, not a standing override
+            # of the freeze rule.
+            needs_migration = False
+            try:
+                with open(path) as f:
+                    existing = json.load(f)
+                ex_records = existing.get('records', [])
+                if ex_records and 'status' not in ex_records[0]:
+                    needs_migration = True
+            except Exception:
+                pass
+            if not needs_migration:
+                frozen += 1
+                continue
+            migrated += 1
         with open(path, 'w') as f:
             json.dump({'date': d, 'records': records}, f, separators=(',', ':'))
         written += 1
-    print(f'  attendance archive: wrote/refreshed {written} days, {frozen} already-frozen days left untouched')
+    print(f'  attendance archive: wrote/refreshed {written} days ({migrated} status-migrated), {frozen} already-frozen days left untouched')
 
 def load_archived_days(start_date, end_date):
     """Load archived daily records for [start_date, end_date] inclusive.
@@ -361,13 +387,22 @@ def build_attend_struct(archived_by_date, date_labels, period):
                     'shopperId': sid, 'name': rec['name'], 'userType': rec['userType'],
                     'department': rec['department'],
                     'values': [0] * len(date_labels), 'deductions': [0] * len(date_labels),
+                    'absences': [0] * len(date_labels), 'onLeaves': [0] * len(date_labels),
                 })
+                # .get() defaults keep this safe for any archived day not yet
+                # migrated to carry 'absent'/'onLeave' (pre-1-Sept-2026 files).
+                absent   = rec.get('absent', 0)
+                on_leave = rec.get('onLeave', 0)
                 if period == 'mtd':
                     pk['values'][i]     = min(1, pk['values'][i] + rec['present'])
                     pk['deductions'][i] = min(1, pk['deductions'][i] + (rec['present'] and rec['deduction']))
+                    pk['absences'][i]   = min(1, pk['absences'][i] + absent)
+                    pk['onLeaves'][i]   = min(1, pk['onLeaves'][i] + on_leave)
                 else:
                     pk['values'][i]     += rec['present']
                     pk['deductions'][i] += (rec['present'] and rec['deduction'])
+                    pk['absences'][i]   += absent
+                    pk['onLeaves'][i]   += on_leave
 
     return {
         'dates': date_labels,
@@ -659,6 +694,8 @@ def compute_cpo(period, date_index, orders, attend, master, cfg, is_mtd=False):
                 hol_days = 0
                 ram_days = 0
                 deduction_days = 0
+                absent_days = 0
+                on_leave_days = 0
                 if is_mtd:
                     for di, dl in enumerate(dates):
                         if dl not in valid_date_set: continue
@@ -676,6 +713,12 @@ def compute_cpo(period, date_index, orders, attend, master, cfg, is_mtd=False):
                                 ded_arr = pk.get('deductions', [])
                                 if a_idx < len(ded_arr):
                                     deduction_days += ded_arr[a_idx]
+                            abs_arr = pk.get('absences', [])
+                            if a_idx < len(abs_arr):
+                                absent_days += abs_arr[a_idx]
+                            leave_arr = pk.get('onLeaves', [])
+                            if a_idx < len(leave_arr):
+                                on_leave_days += leave_arr[a_idx]
                 else:
                     target_date = dates[date_index] if date_index < len(dates) else None
                     a_idx = attend_date_map.get(target_date)
@@ -697,6 +740,12 @@ def compute_cpo(period, date_index, orders, attend, master, cfg, is_mtd=False):
                             ded_arr = pk.get('deductions', [])
                             if a_idx < len(ded_arr):
                                 deduction_days = ded_arr[a_idx]
+                        abs_arr = pk.get('absences', [])
+                        if a_idx < len(abs_arr):
+                            absent_days = abs_arr[a_idx]
+                        leave_arr = pk.get('onLeaves', [])
+                        if a_idx < len(leave_arr):
+                            on_leave_days = leave_arr[a_idx]
 
                 total_p = present + hol_days + ram_days
                 if total_p > 0:
@@ -723,7 +772,11 @@ def compute_cpo(period, date_index, orders, attend, master, cfg, is_mtd=False):
                     dept_set.add(dept)
                     picker_days_list.append({'days': total_p, 'dept': dept, 'rate': rate, 'hours': v_hours,
                                               'shopperId': pk.get('shopperId', ''), 'name': pk.get('name', ''),
-                                              'deductionDays': deduction_days})
+                                              'deductionDays': deduction_days,
+                                              'deductionCost': round(deduction_cost, 2),
+                                              'absentDays': round(absent_days, 2),
+                                              'onLeaveDays': round(on_leave_days, 2),
+                                              'cost': round(this_cost, 2)})
                     bv = by_vendor.setdefault(dept, {'cost': 0, 'pickerCount': 0, 'presentDays': 0})
                     bv['cost']        += this_cost
                     bv['pickerCount'] += 1
@@ -786,7 +839,13 @@ def compute_cpo(period, date_index, orders, attend, master, cfg, is_mtd=False):
                                   'presentDays': round(d['presentDays'], 2)}
                              for v, d in by_vendor.items()},
                 'pickers': [{'shopperId': p['shopperId'], 'name': p['name'], 'department': p['dept'],
-                             'presentDays': round(p['days'], 2), 'deductionDays': round(p.get('deductionDays', 0), 2)}
+                             'presentDays': round(p['days'], 2),
+                             'absentDays': p.get('absentDays', 0),
+                             'onLeaveDays': p.get('onLeaveDays', 0),
+                             'deductionDays': round(p.get('deductionDays', 0), 2),
+                             'deductionHours': round(p.get('deductionDays', 0), 2),
+                             'deductionCost': p.get('deductionCost', 0),
+                             'cost': p.get('cost', 0)}
                             for p in picker_days_list],
             })
 
