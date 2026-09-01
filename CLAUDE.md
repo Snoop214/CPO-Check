@@ -1,5 +1,5 @@
 # CPO (Cost Per Order) — talabat LS
-# Last Updated: 30 July 2026
+# Last Updated: 1 September 2026
 
 ## What This App Does
 Store-level Cost Per Order (CPO) + Picker Utilization Rate (UTR) tracking.
@@ -45,16 +45,45 @@ Also includes a Cost Optimizer tab that evaluates cost-reduction options per sto
 
 ## Google Sheet IDs
 - Orders: `1mDnzwA0fycVbo-1hIxvKzoLoi5U8pv12I6Fazq8CKOI`
-- Attendance: `1LRlCJbv7nnabo_doQ2VAP4jMl80fF-ZpLcsqIE6FO9w`
+- Attendance (legacy, no longer read): `1LRlCJbv7nnabo_doQ2VAP4jMl80fF-ZpLcsqIE6FO9w`
+- **Attendance log (current source)**: `1_6EI-J9_QRTo1HHl1nUoHRzo8vXZnPUQYRLBk5m0grg` — "Daily Attendance", must be shared Viewer with `cpo-dashboard@sales-details-2025.iam.gserviceaccount.com`
 - Master Data: `10swg2HotxTSmIMPGQt6AxARFQyfTbvt7504tFjysmGs`
 
 ## Sheet Tabs
 - Orders: `MTD Order`, `Weekly Order`, `Monthly Order`
-- Attendance: `MTD Know`, `Weekly Know`, `Monthly Know`
+- Attendance log: single flat tab (first sheet), one row per employee per scheduled shift/day. Columns: Employee Name, User Type, Department (3PL), Shopper ID, Shift Branch ID (= vendorId/store), Status (`Absent` / `On Leave` / `Present - On Time` / `Present - Late` / `Scheduled`), Chain Name, Actual Clockin Date/Time, Actual Clockout Date/Time, Scheduled End Time Time, Scheduled Start Time, First/Last Clock Edited By.
+  - Legacy `MTD Know` / `Weekly Know` / `Monthly Know` tabs on the old Attendance sheet are no longer read by `compute.py` — kept only for reference.
 - Master: `Master Data Champions`
 - Hourly Orders: `Sheet2` (vendorId + hourly columns 0–23)
 - Hourly GMV: separate tab (same structure as hourly orders)
 - Store Timing: `Sheet3` (vendorId, open datetime string, close datetime string)
+
+---
+
+## Attendance Pipeline (rewritten 1 Sept 2026 — daily log + permanent archive)
+
+### Why this changed
+The old design read 3 separate pre-aggregated pivot tabs (`MTD Know`/`Weekly Know`/`Monthly Know`) fresh on every run. Those tabs only retain a rolling window of recent months on the source side — once a month's column aged out, `compute.py` would silently recompute that month as zero cost and **commit that over the previously-good archived file**. This is what caused June's data to disappear (and reappear once ops repopulated it). GAS (Option A) avoids this via its Drive `CPO_Data_Archive` folder, which never gets recomputed once a month is done; Option B had no equivalent, so it was replaced with the design below.
+
+### New design
+- **Single source**: one flat "Daily Attendance" shift-log sheet (see Sheet Tabs above) replaces all 3 Know tabs. `read_daily_attendance_log()` reads it and groups rows by calendar day (day = the shift's `Scheduled Start Time` date, since Absent/On Leave/Scheduled rows have no actual clock times).
+- **Permanent archive**: `archive_daily_attendance()` writes one file per calendar day to `data/daily_attendance/YYYY-MM-DD.json` (`{"date":..., "records":[{vendorId, shopperId, name, userType, department, present, deduction}, ...]}`).
+- **Freeze rule**: a day older than `FREEZE_DAYS` (3) is **never overwritten** once a file exists for it — this is what stops a past month from silently zeroing out again. A day with no existing file is always written regardless of age, so a gap from a previously-failed run self-heals as long as the live sheet still shows that date.
+- **MTD/Weekly/Monthly built from the archive, not from the live sheet**: `build_attend_struct()` reads whatever calendar days are archived and sums them into the exact same `{'dates','byStore'}` shape `compute_cpo()` already expected, so `compute_cpo()`'s core logic needed almost no changes. The live "Daily Attendance" sheet only needs to hold a rolling ~40-day window going forward — anything older is safe because it's already frozen in `data/daily_attendance/`.
+- **The live sheet was seeded once (1 Sept 2026) with a full year of history** (Jan–Sep) specifically so the first run after this change would archive all of it permanently before the sheet gets trimmed down to a 40-day rolling window for ongoing daily use.
+
+### Late-start / early-leave pay deduction (added 1 Sept 2026)
+A picker is not paid for 1 hour on any shift where **either**: actual clock-in is >30 min after `Scheduled Start Time`, **or** actual clock-out is >30 min before `Scheduled End Time Time`. Both triggering on the same shift still only deducts 1 hour (never 2). Implemented as:
+- `read_daily_attendance_log()` sets a `deduction` flag (0/1) per shift record based on the above.
+- `build_attend_struct()` carries a `deductions` array parallel to `values` (summed the same way, MTD capped at 1/day like `values`).
+- `compute_cpo()` tracks `deduction_days` per picker per period, capped at that picker's `total_p` (can't deduct more days than present), and subtracts `deduction_days × hourlyRate` (`hourlyRate = dailyRate / vendorHoursPerDay`) from that picker's cost.
+- Store-level result now includes `lateEarlyDeductionDays` and `lateEarlyDeductionCost` fields for visibility.
+- This does **not** touch UTR/`total_hours` — it's a pay policy on top of the existing hours assumption, not a claim about actual hours worked.
+
+### Constants (in `compute.py`)
+- `DAILY_ARCHIVE_DIR` = `data/daily_attendance/`
+- `FREEZE_DAYS = 3`
+- `LATE_EARLY_THRESHOLD_MIN = 30`
 
 ---
 
@@ -432,6 +461,8 @@ Alternatively: set up auto-fetch in Settings → Fetch All Data → Auto-schedul
 - Drive: 15GB free — no meaningful limit for this app
 - `getDailyTrendData()` still computes all MTD dates in one call — may timeout if MTD has many dates. Consider deprecating or batching.
 - Hourly data loaded into `APP.hourlyOrders` / `APP.hourlyGMV` / `APP.storeTiming` on startup — if not available, optimizer shows "No hourly data" for affected options
+- The "Daily Attendance" sheet (attendance log) is a rolling window (~40-50 days) maintained manually by ops — it is NOT a permanent archive. `data/daily_attendance/*.json` is the permanent record; the live sheet only needs to cover recent days plus a small buffer.
+- `data/daily_attendance/` grows by ~1 small file/day (~15-20MB/year) — no practical size issue for git at that rate, but worth revisiting if this ever needs multi-year retention at much higher granularity.
 
 ---
 
@@ -455,6 +486,11 @@ Alternatively: set up auto-fetch in Settings → Fetch All Data → Auto-schedul
 
 ### Sheet Tab Names (compute.py)
 - Orders sheet tabs are lowercase 'o': `Weekly order`, `Monthly order` (NOT `Weekly Order`)
+
+### Attendance Archive (compute.py) — the June-data-loss bug
+- **Never recompute weekly/monthly attendance directly from the live "Daily Attendance" sheet for old dates.** Always build them from `data/daily_attendance/*.json` via `build_attend_struct()`. The live sheet is a short rolling window (~40-50 days) — reading it directly for a month that's aged out of that window is exactly what silently zeroed June's cost before this rewrite.
+- **Never remove or weaken the `FREEZE_DAYS` check in `archive_daily_attendance()`.** A day older than `FREEZE_DAYS` with an existing archive file must never be overwritten, even if the live sheet currently shows different (or missing) data for that date — that's what makes the archive permanent instead of just a second copy of the same fragile live read.
+- Days with **no existing file are always written regardless of age** — this is intentional (self-heals gaps from a previously-failed run) and is not a bug.
 
 ---
 
