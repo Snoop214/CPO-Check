@@ -3,8 +3,8 @@ talabat LS — CPO Compute Script
 Reads Google Sheets → computes CPO/UTR → writes JSON files to data/
 Run by GitHub Actions on schedule, or locally for testing.
 """
-import json, os, math, re, sys
-from datetime import datetime, date
+import json, os, math, re, sys, calendar
+from datetime import datetime, date, timedelta
 from dateutil.relativedelta import relativedelta
 import gspread
 from google.oauth2.service_account import Credentials
@@ -82,6 +82,27 @@ def find_col(headers, names):
         try: return hl.index(n)
         except ValueError: pass
     return -1
+
+def _period_date_range(period, target_date, year, month):
+    """Return (start,end) inclusive calendar-date strings that this period's
+    single date label actually spans. Weekly/Monthly attendance data only
+    gives one aggregate total per label (e.g. '2026-06-01' for the whole
+    month, or a week-ending date for a week) — so a literal `target_date ==
+    holiday_date` check almost never matches. This reconstructs the real
+    span so we can tell whether a holiday falls inside it."""
+    if period == 'monthly':
+        last_day = calendar.monthrange(year, month)[1]
+        return f'{year}-{month:02d}-01', f'{year}-{month:02d}-{last_day:02d}'
+    if period == 'weekly':
+        # Sheet labels are "week ending" dates (see 'Scheduled End Time Week').
+        try:
+            end = datetime.strptime(str(target_date)[:10], '%Y-%m-%d').date()
+            start = end - timedelta(days=6)
+            return start.isoformat(), end.isoformat()
+        except (ValueError, TypeError):
+            return target_date, target_date
+    # Daily / per-day MTD calls already use a real single calendar day.
+    return target_date, target_date
 
 def get_working_days(month, year, overrides):
     key = f'{year}-{month:02d}'
@@ -515,8 +536,14 @@ def compute_cpo(period, date_index, orders, attend, master, cfg, is_mtd=False):
                     if a_idx is not None and a_idx < len(pk['values']):
                         day_val = pk['values'][a_idx]
                         if day_val > 0:
-                            if target_date in holiday_dates:
-                                hol_days = day_val
+                            p_start, p_end = _period_date_range(period, target_date, year, month)
+                            holidays_in_period = [h for h in holiday_dates if p_start <= h <= p_end]
+                            if holidays_in_period:
+                                # Weekly/Monthly totals don't tell us which specific days
+                                # were worked, so assume any active picker also worked the
+                                # holiday(s) in this period, capped at their actual presence.
+                                hol_days = min(len(holidays_in_period), day_val)
+                                present  = day_val - hol_days
                             elif target_date in ramadan_set:
                                 ram_days = day_val
                             else:
