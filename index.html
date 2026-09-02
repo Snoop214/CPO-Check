@@ -1014,7 +1014,6 @@ function pdRenderTable(){
     {k:'presentDays',l:'Present Days',a:'right'},{k:'absentDays',l:'Absent Days',a:'right'},{k:'onLeaveDays',l:'On Leave Days',a:'right'},
     {k:'deductionHours',l:'Deduction Hrs',a:'right'},{k:'deductionCost',l:'Deduction Cost',a:'right'},
     {k:'holOtDays',l:'OT Days',a:'right'},{k:'holOtCost',l:'OT Amount',a:'right'},
-    {k:'otDays',l:'OT Days (Monthly)',a:'right'},{k:'otValue',l:'OT Value (Monthly)',a:'right'},
     {k:'cost',l:'Total Cost',a:'right'}
   ];
   var totalCost=data.reduce(function(s,r){return s+(r.cost||0);},0);
@@ -1055,8 +1054,6 @@ function pdRenderTable(){
     html+='<td style="text-align:right">'+_getCurrency()+' '+fmt(Math.round(r.deductionCost))+'</td>';
     html+='<td style="text-align:right'+(r.holOtDays>0?';color:#0369a1;font-weight:600':'')+'">'+r.holOtDays+'</td>';
     html+='<td style="text-align:right'+(r.holOtCost>0?';color:#0369a1;font-weight:600':'')+'">'+_getCurrency()+' '+fmt(Math.round(r.holOtCost))+'</td>';
-    html+='<td style="text-align:right'+(r.otDays>0?';color:#0369a1;font-weight:600':'')+'">'+r.otDays+'</td>';
-    html+='<td style="text-align:right'+(r.otValue>0?';color:#0369a1;font-weight:600':'')+'">'+_getCurrency()+' '+fmt(Math.round(r.otValue))+'</td>';
     html+='<td style="text-align:right;font-weight:600">'+_getCurrency()+' '+fmt(Math.round(r.cost))+(r.fullSalaryFloor?' <span title="Full-salary floor applied — present+leave covered the whole month" style="color:var(--success);font-size:10px"><i class="fas fa-check-circle"></i></span>':'')+'</td>';
     html+='</tr>';
   });
@@ -1066,8 +1063,8 @@ function pdRenderTable(){
 
 function pdExportCSV(){
   var data=APP.pd.filtered||[];
-  var cols=['shopperId','name','dept3pl','vendorId','storeName','chain','city','presentDays','absentDays','onLeaveDays','deductionHours','deductionCost','holOtDays','holOtCost','otDays','otValue','cost'];
-  var hdrs=['Shopper ID','Picker Name','3PL','Vendor ID','Store','Chain','City','Present Days','Absent Days','On Leave Days','Deduction Hours','Deduction Cost','OT Days','OT Amount','OT Days (Monthly)','OT Value (Monthly)','Total Cost'];
+  var cols=['shopperId','name','dept3pl','vendorId','storeName','chain','city','presentDays','absentDays','onLeaveDays','deductionHours','deductionCost','holOtDays','holOtCost','cost'];
+  var hdrs=['Shopper ID','Picker Name','3PL','Vendor ID','Store','Chain','City','Present Days','Absent Days','On Leave Days','Deduction Hours','Deduction Cost','OT Days','OT Amount','Total Cost'];
   var csv=hdrs.join(',')+'\n';
   data.forEach(function(r){csv+=cols.map(function(c){var v=r[c];return typeof v==='string'?'"'+v.replace(/"/g,'""')+'"':(v!=null?v:0);}).join(',')+'\n';});
   var a=document.createElement('a');

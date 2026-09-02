@@ -459,11 +459,15 @@ Alternatively: set up auto-fetch in Settings → Fetch All Data → Auto-schedul
   OT premium and no OT day/amount shown.
 - This is a **different** field from the pre-existing `otDays`/`otValue`
   (Monthly-only, gated by the separate **OT Agreement?** checkbox
-  `otAgreement` — days present beyond the month's working-day quota). Payment
-  Detail now labels that pair "OT Days (Monthly)" / "OT Value (Monthly)" to
-  avoid confusion with the new Holiday OT columns. Do not merge the two —
-  they answer different questions and can both be non-zero for the same
-  picker.
+  `otAgreement` — days present beyond the month's working-day quota). They are
+  still computed in `compute.py` and still in every `cpo_*.json` file, but as
+  of 2 Sept 2026 they are **not shown as Payment Detail table/CSV columns** —
+  no vendor currently has `otAgreement` enabled, so those columns were always
+  0 for every row, next to the populated Holiday OT columns, which read as a
+  confusing duplicate "OT" pair. If a vendor ever gets `otAgreement` enabled,
+  re-add `otDays`/`otValue` as their own clearly-labeled columns (e.g. "OT
+  Days (Monthly)") rather than reusing the Holiday OT columns — they answer
+  different questions and can both be non-zero for the same picker.
 
 ## Headcount Reduction Cap
 - Headcount-reduction options (`headcount`, `trim_headcount`) never suggest cutting more than **1 picker** below current in a single recommendation, even if peak-hour capacity math would allow a bigger cut
