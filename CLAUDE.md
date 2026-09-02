@@ -1,5 +1,5 @@
 # CPO (Cost Per Order) — talabat LS
-# Last Updated: 1 September 2026
+# Last Updated: 2 September 2026
 
 ## What This App Does
 Store-level Cost Per Order (CPO) + Picker Utilization Rate (UTR) tracking.
@@ -447,6 +447,24 @@ Alternatively: set up auto-fetch in Settings → Fetch All Data → Auto-schedul
 - OT cost = `otHrs × otMultiplier × hourlyRate × pickers × workDays`
 - `hourlyRate = monthRate / (wDays × contractHrs)`
 
+### Payment Detail — Holiday OT column (added 2 Sept 2026)
+- Payment Detail's "OT Days" / "OT Amount" columns show **Holiday OT only** —
+  the extra premium (`holOtDays`/`holOtCost` per picker, `holOtDays`/`holOtCost`
+  rolled up per store) paid for days worked on a public holiday, computed in
+  `compute_cpo()` right where the existing `hol_extra` is computed.
+- Gated per-3PL by the vendor's **Holiday OT?** checkbox in Settings → Vendor
+  Rates (`vm['holiday_ot']`, config field `holidayOT`): a vendor with Holiday
+  OT off always shows 0 in these columns, even for pickers who did work a
+  public holiday — they're still paid for the day (linear rate), just with no
+  OT premium and no OT day/amount shown.
+- This is a **different** field from the pre-existing `otDays`/`otValue`
+  (Monthly-only, gated by the separate **OT Agreement?** checkbox
+  `otAgreement` — days present beyond the month's working-day quota). Payment
+  Detail now labels that pair "OT Days (Monthly)" / "OT Value (Monthly)" to
+  avoid confusion with the new Holiday OT columns. Do not merge the two —
+  they answer different questions and can both be non-zero for the same
+  picker.
+
 ## Headcount Reduction Cap
 - Headcount-reduction options (`headcount`, `trim_headcount`) never suggest cutting more than **1 picker** below current in a single recommendation, even if peak-hour capacity math would allow a bigger cut
 - `minPickers = max(theoreticalMinFromPeak, currentPickers - 1)` — re-evaluate after each step rather than jumping straight to a theoretical minimum
@@ -454,6 +472,28 @@ Alternatively: set up auto-fetch in Settings → Fetch All Data → Auto-schedul
 - No external reliever role — coverage during a picker's day off is either OT paid to a colleague (`covOTFull`/`covOTThis`) or, when no timing data exists, a flat OT-based estimate. Never reintroduce "reliever" as a distinct cost line in this flow (see also "Critical Bugs Fixed" below)
 
 ---
+
+## Recompute Freeze — closed periods never get rewritten by a Settings change (added 2 Sept 2026)
+- Every `compute.py` run used to recompute **every** `cpo_daily_*` / `cpo_weekly_*` /
+  `cpo_monthly_*` file on every run, using whatever Vendor Rates / Holiday OT /
+  Working Days config was live at that moment — so editing a rate in Settings
+  silently rewrote the cost of every past day/week/month the next time Actions ran.
+- `_period_closed(kind, date_label, today)` now marks a day/week/month "closed"
+  once it has fully ended **and** `FREEZE_DAYS` (3) has passed since — the exact
+  same grace window the attendance archive already uses, so late attendance
+  corrections still land before a period locks. `main()` skips recompute for any
+  closed period that already has a file on disk; a period with no existing file
+  yet is always computed regardless of age (self-heals a gap from a failed run).
+- Net effect: a Settings edit (rate, Holiday OT, contract hours, etc.) only
+  changes the **current** day/week/month and anything from here forward.
+  Already-closed Payment Detail / Dashboard numbers for past periods stay exactly
+  as first computed. This mirrors the GAS (Option A) `cpo_precomp_done` behavior
+  ("past months/weeks never recomputed") for Option B.
+- If a genuinely-closed period's numbers need correcting on purpose (e.g. a
+  backfilled rate correction that should apply retroactively), delete that
+  period's `data/cpo_*.json` file(s) so the next Actions run treats it as
+  missing and recomputes it — the same "no existing file → always compute"
+  self-heal rule used above, applied deliberately instead of by accident.
 
 ## Known Limitations
 - GAS execution limit: 6 minutes per call — handled by batch approach and 5-min budget in `scheduledFetch`

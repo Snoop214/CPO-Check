@@ -50,6 +50,7 @@ body{font-family:'Poppins',sans-serif;background:var(--bg);color:var(--text);min
 .search-input{padding:6px 10px;border:1.5px solid var(--border);border-radius:7px;font-family:inherit;font-size:12px;width:240px;transition:width .2s}
 .search-input:focus{outline:none;border-color:var(--primary);width:300px}
 .tbl-scroll{overflow:auto;max-height:480px}
+.pd-tbl-scroll{max-height:min(78vh,900px)}
 table{width:100%;border-collapse:collapse}
 thead th{background:var(--dark);color:#fff;padding:9px 12px;font-size:10px;font-weight:600;text-transform:uppercase;letter-spacing:.5px;cursor:pointer;white-space:nowrap;position:sticky;top:0;user-select:none}
 thead th:hover{background:#5a2225}
@@ -934,6 +935,7 @@ function pdOnData(r){
         deductionHours: p.deductionHours!=null?p.deductionHours:(p.deductionDays||0),
         deductionCost: p.deductionCost||0,
         otDays: p.otDays||0, otValue: p.otValue||0, fullSalaryFloor: !!p.fullSalaryFloor,
+        holOtDays: p.holOtDays||0, holOtCost: p.holOtCost||0,
         cost: p.cost||0,
       });
     });
@@ -1011,16 +1013,31 @@ function pdRenderTable(){
     {k:'vendorId',l:'Vendor ID',a:'left'},{k:'storeName',l:'Store',a:'left'},{k:'chain',l:'Chain',a:'left'},
     {k:'presentDays',l:'Present Days',a:'right'},{k:'absentDays',l:'Absent Days',a:'right'},{k:'onLeaveDays',l:'On Leave Days',a:'right'},
     {k:'deductionHours',l:'Deduction Hrs',a:'right'},{k:'deductionCost',l:'Deduction Cost',a:'right'},
-    {k:'otDays',l:'OT Days',a:'right'},{k:'otValue',l:'OT Value',a:'right'},{k:'cost',l:'Total Cost',a:'right'}
+    {k:'holOtDays',l:'OT Days',a:'right'},{k:'holOtCost',l:'OT Amount',a:'right'},
+    {k:'otDays',l:'OT Days (Monthly)',a:'right'},{k:'otValue',l:'OT Value (Monthly)',a:'right'},
+    {k:'cost',l:'Total Cost',a:'right'}
   ];
   var totalCost=data.reduce(function(s,r){return s+(r.cost||0);},0);
   var totalDed=data.reduce(function(s,r){return s+(r.deductionCost||0);},0);
+  var totalHolOt=data.reduce(function(s,r){return s+(r.holOtCost||0);},0);
+  var totalHolOtDays=data.reduce(function(s,r){return s+(r.holOtDays||0);},0);
+  var totalPresent=data.reduce(function(s,r){return s+(r.presentDays||0);},0);
+  var totalAbsent=data.reduce(function(s,r){return s+(r.absentDays||0);},0);
+  var totalLeave=data.reduce(function(s,r){return s+(r.onLeaveDays||0);},0);
+  var uniqueStores={}; data.forEach(function(r){if(r.vendorId)uniqueStores[r.vendorId]=1;});
   var html='<div style="margin-bottom:8px;font-size:12px;color:var(--muted)"><i class="fas fa-calendar-alt" style="margin-right:4px"></i>'+(APP.pd.dateLabel||'')+'</div>';
+  html+='<div class="kpi-row">';
+  html+='<div class="kpi"><div class="kpi-label">Pickers</div><div class="kpi-value">'+fmt(data.length)+'</div><div class="kpi-sub">'+Object.keys(uniqueStores).length+' stores</div></div>';
+  html+='<div class="kpi"><div class="kpi-label">Total Cost</div><div class="kpi-value">'+_getCurrency()+' '+fmt(Math.round(totalCost))+'</div><div class="kpi-sub">'+fmt(Math.round(totalPresent))+' present days</div></div>';
+  html+='<div class="kpi"><div class="kpi-label">Deducted</div><div class="kpi-value" style="color:#ea580c">'+_getCurrency()+' '+fmt(Math.round(totalDed))+'</div><div class="kpi-sub">Late-start / early-leave</div></div>';
+  html+='<div class="kpi"><div class="kpi-label">Holiday OT Amount</div><div class="kpi-value" style="color:#0369a1">'+_getCurrency()+' '+fmt(Math.round(totalHolOt))+'</div><div class="kpi-sub">'+fmt(totalHolOtDays)+' OT days · Hol OT 3PLs only</div></div>';
+  html+='<div class="kpi"><div class="kpi-label">Absent / On Leave</div><div class="kpi-value" style="color:var(--danger)">'+fmt(totalAbsent)+' / '+fmt(totalLeave)+'</div><div class="kpi-sub">Absent days / On leave days</div></div>';
+  html+='</div>';
   html+='<div class="table-wrap"><div class="table-toolbar">';
   html+='<input class="search-input" id="pdSearch" placeholder="Search picker name or ID..." oninput="pdApplyFilters()">';
   html+='<div style="display:flex;gap:6px;align-items:center"><span style="font-size:11px;color:var(--muted)">'+data.length+' pickers · '+_getCurrency()+' '+fmt(Math.round(totalCost))+' total cost · '+_getCurrency()+' '+fmt(Math.round(totalDed))+' deducted</span>';
   html+='<button class="btn btn-sm btn-outline" onclick="pdExportCSV()"><i class="fas fa-download"></i> Export</button></div>';
-  html+='</div><div class="tbl-scroll"><table><thead><tr>';
+  html+='</div><div class="tbl-scroll pd-tbl-scroll"><table><thead><tr>';
   cols.forEach(function(c){
     var sorted=APP.pd.sortCol===c.k;
     html+='<th onclick="pdSort(\''+c.k+'\')" class="'+(sorted?'sorted':'')+'" style="text-align:'+c.a+'">'+c.l+' <span style="opacity:.5;font-size:9px">'+(sorted?(APP.pd.sortAsc?'▲':'▼'):'⇅')+'</span></th>';
@@ -1036,6 +1053,8 @@ function pdRenderTable(){
     html+='<td style="text-align:right'+(r.onLeaveDays>0?';color:#d97706;font-weight:600':'')+'">'+r.onLeaveDays+'</td>';
     html+='<td style="text-align:right'+(r.deductionHours>0?';color:#ea580c;font-weight:600':'')+'">'+r.deductionHours+'</td>';
     html+='<td style="text-align:right">'+_getCurrency()+' '+fmt(Math.round(r.deductionCost))+'</td>';
+    html+='<td style="text-align:right'+(r.holOtDays>0?';color:#0369a1;font-weight:600':'')+'">'+r.holOtDays+'</td>';
+    html+='<td style="text-align:right'+(r.holOtCost>0?';color:#0369a1;font-weight:600':'')+'">'+_getCurrency()+' '+fmt(Math.round(r.holOtCost))+'</td>';
     html+='<td style="text-align:right'+(r.otDays>0?';color:#0369a1;font-weight:600':'')+'">'+r.otDays+'</td>';
     html+='<td style="text-align:right'+(r.otValue>0?';color:#0369a1;font-weight:600':'')+'">'+_getCurrency()+' '+fmt(Math.round(r.otValue))+'</td>';
     html+='<td style="text-align:right;font-weight:600">'+_getCurrency()+' '+fmt(Math.round(r.cost))+(r.fullSalaryFloor?' <span title="Full-salary floor applied — present+leave covered the whole month" style="color:var(--success);font-size:10px"><i class="fas fa-check-circle"></i></span>':'')+'</td>';
@@ -1047,8 +1066,8 @@ function pdRenderTable(){
 
 function pdExportCSV(){
   var data=APP.pd.filtered||[];
-  var cols=['shopperId','name','dept3pl','vendorId','storeName','chain','city','presentDays','absentDays','onLeaveDays','deductionHours','deductionCost','otDays','otValue','cost'];
-  var hdrs=['Shopper ID','Picker Name','3PL','Vendor ID','Store','Chain','City','Present Days','Absent Days','On Leave Days','Deduction Hours','Deduction Cost','OT Days','OT Value','Total Cost'];
+  var cols=['shopperId','name','dept3pl','vendorId','storeName','chain','city','presentDays','absentDays','onLeaveDays','deductionHours','deductionCost','holOtDays','holOtCost','otDays','otValue','cost'];
+  var hdrs=['Shopper ID','Picker Name','3PL','Vendor ID','Store','Chain','City','Present Days','Absent Days','On Leave Days','Deduction Hours','Deduction Cost','OT Days','OT Amount','OT Days (Monthly)','OT Value (Monthly)','Total Cost'];
   var csv=hdrs.join(',')+'\n';
   data.forEach(function(r){csv+=cols.map(function(c){var v=r[c];return typeof v==='string'?'"'+v.replace(/"/g,'""')+'"':(v!=null?v:0);}).join(',')+'\n';});
   var a=document.createElement('a');
