@@ -147,6 +147,29 @@ def get_working_days(month, year, overrides):
 # grace tail after each) and anything from here forward. A period with no
 # existing file yet is always computed regardless of age (self-heals a gap
 # left by a previously-failed run).
+
+# Field names that MUST be present on every store result in a cpo_*.json file.
+# A frozen file computed before one of these fields existed (e.g. holOtDays/
+# holOtCost, added 2 Sept 2026 for the Payment Detail Holiday OT columns) is
+# missing it entirely, not just zero — so it needs a one-time backfill even
+# though the period itself is closed. This mirrors the attendance archive's
+# 'status' migration escape hatch: self-limiting, because once a file has the
+# field it never triggers this branch again, and it never touches `cost` or
+# any other already-computed number — only adds fields that were previously
+# absent, using the same historical inputs as the original computation.
+REQUIRED_STORE_FIELDS = ('holOtDays', 'holOtCost')
+
+def _needs_field_backfill(path):
+    try:
+        with open(path) as f:
+            existing = json.load(f)
+        stores = existing.get('data', [])
+        if not stores:
+            return False  # nothing to check against — leave it frozen
+        return any(field not in stores[0] for field in REQUIRED_STORE_FIELDS)
+    except Exception:
+        return True  # unreadable/corrupt — safest to recompute
+
 def _period_closed(kind, date_label, today):
     # Same FREEZE_DAYS grace window as the attendance archive: a period isn't
     # frozen the instant it ends — it stays open a few more days so ops'
@@ -1033,7 +1056,8 @@ def main():
     daily_done, daily_frozen = 0, 0
     for i, dl in enumerate(dates_mtd):
         fname = f'cpo_daily_{dl}.json'
-        if _period_closed('daily', dl, today) and os.path.exists(os.path.join(DATA_DIR, fname)):
+        full_path = os.path.join(DATA_DIR, fname)
+        if _period_closed('daily', dl, today) and os.path.exists(full_path) and not _needs_field_backfill(full_path):
             daily_frozen += 1
             continue
         r = compute_cpo('mtd', i, raw['mtd']['orders'], raw['mtd']['attend'], master, cfg, is_mtd=False)
@@ -1048,7 +1072,8 @@ def main():
     weekly_done, weekly_frozen = 0, 0
     for i, dl in enumerate(dates_weekly):
         fname = f'cpo_weekly_{dl[:10]}.json'
-        if _period_closed('weekly', dl, today) and os.path.exists(os.path.join(DATA_DIR, fname)):
+        full_path = os.path.join(DATA_DIR, fname)
+        if _period_closed('weekly', dl, today) and os.path.exists(full_path) and not _needs_field_backfill(full_path):
             weekly_frozen += 1
             continue
         r = compute_cpo('weekly', i, raw['weekly']['orders'], raw['weekly']['attend'], master, cfg, is_mtd=False)
@@ -1063,7 +1088,8 @@ def main():
     monthly_done, monthly_frozen = 0, 0
     for i, dl in enumerate(dates_monthly):
         fname = f'cpo_monthly_{dl[:7]}.json'
-        if _period_closed('monthly', dl, today) and os.path.exists(os.path.join(DATA_DIR, fname)):
+        full_path = os.path.join(DATA_DIR, fname)
+        if _period_closed('monthly', dl, today) and os.path.exists(full_path) and not _needs_field_backfill(full_path):
             monthly_frozen += 1
             continue
         r = compute_cpo('monthly', i, raw['monthly']['orders'], raw['monthly']['attend'], master, cfg, is_mtd=False)

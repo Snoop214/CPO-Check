@@ -494,6 +494,18 @@ Alternatively: set up auto-fetch in Settings → Fetch All Data → Auto-schedul
   period's `data/cpo_*.json` file(s) so the next Actions run treats it as
   missing and recomputes it — the same "no existing file → always compute"
   self-heal rule used above, applied deliberately instead of by accident.
+- **Field-backfill escape hatch**: a frozen file computed before a new output
+  field existed (e.g. `holOtDays`/`holOtCost`, added 2 Sept 2026) is missing
+  that field entirely — `_needs_field_backfill()` detects this by checking the
+  first store result against `REQUIRED_STORE_FIELDS` and forces a one-time
+  recompute even for a closed period, so the field gets backfilled using the
+  same historical inputs. It never changes `cost` or any other already-present
+  number — only adds fields that didn't exist yet. Self-limiting: once a file
+  has the field, this never fires for it again. Mirrors the attendance
+  archive's own 'status' migration escape hatch. When adding a new per-store
+  output field in future, add its name to `REQUIRED_STORE_FIELDS` so existing
+  archives backfill it automatically on the next run instead of staying stuck
+  at 0/missing forever.
 
 ## Known Limitations
 - GAS execution limit: 6 minutes per call — handled by batch approach and 5-min budget in `scheduledFetch`
