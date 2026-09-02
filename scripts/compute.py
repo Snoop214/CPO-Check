@@ -615,6 +615,7 @@ def compute_cpo(period, date_index, orders, attend, master, cfg, is_mtd=False):
     ref_date = dates[0] if is_mtd else (dates[date_index] if date_index < len(dates) else dates[0])
     dp = ref_date[:7].split('-')
     year, month = int(dp[0]), int(dp[1])
+    days_in_month = calendar.monthrange(year, month)[1]
 
     work_days_overrides = {o['key']: o['days'] for o in cfg.get('working_days', [])} if isinstance(cfg.get('working_days'), list) else cfg.get('working_days', {})
     work_days = get_working_days(month, year, work_days_overrides)
@@ -648,6 +649,7 @@ def compute_cpo(period, date_index, orders, attend, master, cfg, is_mtd=False):
                 'ramadan_ot':     vr.get('ramadanOT', False),
                 'holiday_ot':     vr.get('holidayOT', True),
                 'holiday_ot_mult': vr.get('holidayOTMult', ot_m),
+                'ot_agreement':   vr.get('otAgreement', False),
             }
 
     attend_date_map = {d: i for i, d in enumerate(attend_dates)}
@@ -703,6 +705,8 @@ def compute_cpo(period, date_index, orders, attend, master, cfg, is_mtd=False):
         total_hours = 0
         total_deduction_days = 0
         total_deduction_cost = 0
+        total_ot_days = 0
+        total_ot_cost = 0
         dept_set = set()
         picker_days_list = []
         daily_counts = {}
@@ -784,18 +788,44 @@ def compute_cpo(period, date_index, orders, attend, master, cfg, is_mtd=False):
                     if ram_days > 0 and vm.get('ramadan_ot'):
                         r_hrs     = vm.get('ramadan_hours', v_hours)
                         ram_extra = ram_days * max(0, r_hrs - v_hours) * hr_rate * ot_mult
+
+                    # Full-salary floor (Monthly only): if a picker's present+
+                    # on-leave days cover every calendar day in the month (i.e.
+                    # zero real absences), they're guaranteed at least the full
+                    # monthly rate — on-leave days count as paid leave rather
+                    # than reducing pay below 100%. This never REDUCES pay for
+                    # someone who already earns more than the base rate by
+                    # working beyond the month's working-day quota.
+                    base_cost = daily_rate * total_p
+                    full_salary_floor = (period == 'monthly' and (total_p + on_leave_days) >= days_in_month)
+                    if full_salary_floor:
+                        base_cost = max(base_cost, rate)
+
+                    # OT days (Monthly only): days present beyond the month's
+                    # working-day quota, paid as an OT premium ON TOP of the
+                    # (already-included, linear) base pay for those days —
+                    # only for vendors with an OT agreement (config-driven,
+                    # never hardcoded — see vendor_map's 'ot_agreement').
+                    ot_days = 0
+                    ot_value = 0
+                    if period == 'monthly' and vm.get('ot_agreement'):
+                        ot_days  = max(0, total_p - work_days)
+                        ot_value = ot_days * daily_rate * (ot_mult - 1)
+
                     # Late-start/early-leave rule: no pay for 1 hour on any day that
                     # triggered it (never more than 1 hour/day, and never more days
                     # of deduction than days actually present).
                     deduction_days = min(deduction_days, total_p)
                     deduction_cost = deduction_days * hr_rate
-                    this_cost      = daily_rate * total_p + hol_extra + ram_extra - deduction_cost
+                    this_cost      = base_cost + hol_extra + ram_extra + ot_value - deduction_cost
                     picker_cost   += this_cost
                     picker_count  += 1
                     total_present += total_p
                     total_hours   += total_p * v_hours
                     total_deduction_days += deduction_days
                     total_deduction_cost += deduction_cost
+                    total_ot_days  += ot_days
+                    total_ot_cost  += ot_value
                     dept_set.add(dept)
                     picker_days_list.append({'days': total_p, 'dept': dept, 'rate': rate, 'hours': v_hours,
                                               'shopperId': pk.get('shopperId', ''), 'name': pk.get('name', ''),
@@ -803,6 +833,9 @@ def compute_cpo(period, date_index, orders, attend, master, cfg, is_mtd=False):
                                               'deductionCost': round(deduction_cost, 2),
                                               'absentDays': round(absent_days, 2),
                                               'onLeaveDays': round(on_leave_days, 2),
+                                              'otDays': round(ot_days, 2),
+                                              'otValue': round(ot_value, 2),
+                                              'fullSalaryFloor': full_salary_floor,
                                               'cost': round(this_cost, 2)})
                     bv = by_vendor.setdefault(dept, {'cost': 0, 'pickerCount': 0, 'presentDays': 0})
                     bv['cost']        += this_cost
@@ -861,6 +894,8 @@ def compute_cpo(period, date_index, orders, attend, master, cfg, is_mtd=False):
                 'utr':         round(utr, 1),
                 'lateEarlyDeductionDays': round(total_deduction_days, 2),
                 'lateEarlyDeductionCost': round(total_deduction_cost),
+                'otDays': round(total_ot_days, 2),
+                'otCost': round(total_ot_cost),
                 'relieverInfo': reliever_info,
                 'byVendor': {v: {'cost': round(d['cost']), 'pickerCount': d['pickerCount'],
                                   'presentDays': round(d['presentDays'], 2)}
@@ -872,6 +907,9 @@ def compute_cpo(period, date_index, orders, attend, master, cfg, is_mtd=False):
                              'deductionDays': round(p.get('deductionDays', 0), 2),
                              'deductionHours': round(p.get('deductionDays', 0), 2),
                              'deductionCost': p.get('deductionCost', 0),
+                             'otDays': p.get('otDays', 0),
+                             'otValue': p.get('otValue', 0),
+                             'fullSalaryFloor': p.get('fullSalaryFloor', False),
                              'cost': p.get('cost', 0)}
                             for p in picker_days_list],
             })

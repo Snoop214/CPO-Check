@@ -799,7 +799,9 @@ function pdOnData(r){
         presentDays: p.presentDays||0, absentDays: p.absentDays||0, onLeaveDays: p.onLeaveDays||0,
         deductionDays: p.deductionDays||0,
         deductionHours: p.deductionHours!=null?p.deductionHours:(p.deductionDays||0),
-        deductionCost: p.deductionCost||0, cost: p.cost||0,
+        deductionCost: p.deductionCost||0,
+        otDays: p.otDays||0, otValue: p.otValue||0, fullSalaryFloor: !!p.fullSalaryFloor,
+        cost: p.cost||0,
       });
     });
   });
@@ -875,7 +877,8 @@ function pdRenderTable(){
     {k:'shopperId',l:'Shopper ID',a:'left'},{k:'name',l:'Picker Name',a:'left'},{k:'dept3pl',l:'3PL',a:'left'},
     {k:'vendorId',l:'Vendor ID',a:'left'},{k:'storeName',l:'Store',a:'left'},{k:'chain',l:'Chain',a:'left'},
     {k:'presentDays',l:'Present Days',a:'right'},{k:'absentDays',l:'Absent Days',a:'right'},{k:'onLeaveDays',l:'On Leave Days',a:'right'},
-    {k:'deductionHours',l:'Deduction Hrs',a:'right'},{k:'deductionCost',l:'Deduction Cost',a:'right'},{k:'cost',l:'Total Cost',a:'right'}
+    {k:'deductionHours',l:'Deduction Hrs',a:'right'},{k:'deductionCost',l:'Deduction Cost',a:'right'},
+    {k:'otDays',l:'OT Days',a:'right'},{k:'otValue',l:'OT Value',a:'right'},{k:'cost',l:'Total Cost',a:'right'}
   ];
   var totalCost=data.reduce(function(s,r){return s+(r.cost||0);},0);
   var totalDed=data.reduce(function(s,r){return s+(r.deductionCost||0);},0);
@@ -900,7 +903,9 @@ function pdRenderTable(){
     html+='<td style="text-align:right'+(r.onLeaveDays>0?';color:#d97706;font-weight:600':'')+'">'+r.onLeaveDays+'</td>';
     html+='<td style="text-align:right'+(r.deductionHours>0?';color:#ea580c;font-weight:600':'')+'">'+r.deductionHours+'</td>';
     html+='<td style="text-align:right">'+_getCurrency()+' '+fmt(Math.round(r.deductionCost))+'</td>';
-    html+='<td style="text-align:right;font-weight:600">'+_getCurrency()+' '+fmt(Math.round(r.cost))+'</td>';
+    html+='<td style="text-align:right'+(r.otDays>0?';color:#0369a1;font-weight:600':'')+'">'+r.otDays+'</td>';
+    html+='<td style="text-align:right'+(r.otValue>0?';color:#0369a1;font-weight:600':'')+'">'+_getCurrency()+' '+fmt(Math.round(r.otValue))+'</td>';
+    html+='<td style="text-align:right;font-weight:600">'+_getCurrency()+' '+fmt(Math.round(r.cost))+(r.fullSalaryFloor?' <span title="Full-salary floor applied — present+leave covered the whole month" style="color:var(--success);font-size:10px"><i class="fas fa-check-circle"></i></span>':'')+'</td>';
     html+='</tr>';
   });
   html+='</tbody></table></div></div>';
@@ -909,8 +914,8 @@ function pdRenderTable(){
 
 function pdExportCSV(){
   var data=APP.pd.filtered||[];
-  var cols=['shopperId','name','dept3pl','vendorId','storeName','chain','city','presentDays','absentDays','onLeaveDays','deductionHours','deductionCost','cost'];
-  var hdrs=['Shopper ID','Picker Name','3PL','Vendor ID','Store','Chain','City','Present Days','Absent Days','On Leave Days','Deduction Hours','Deduction Cost','Total Cost'];
+  var cols=['shopperId','name','dept3pl','vendorId','storeName','chain','city','presentDays','absentDays','onLeaveDays','deductionHours','deductionCost','otDays','otValue','cost'];
+  var hdrs=['Shopper ID','Picker Name','3PL','Vendor ID','Store','Chain','City','Present Days','Absent Days','On Leave Days','Deduction Hours','Deduction Cost','OT Days','OT Value','Total Cost'];
   var csv=hdrs.join(',')+'\n';
   data.forEach(function(r){csv+=cols.map(function(c){var v=r[c];return typeof v==='string'?'"'+v.replace(/"/g,'""')+'"':(v!=null?v:0);}).join(',')+'\n';});
   var a=document.createElement('a');
@@ -2886,21 +2891,24 @@ function renderRatesTab(){
   h+='<div class="form-group"><label>OT Multiplier</label><input id="rOTMult" type="number" placeholder="1.5" min="1" max="3" step="0.1" value="1.5"></div>';
   h+='<div class="form-group"><label>Ramadan Hrs/Day</label><input id="rRamHours" type="number" placeholder="9" min="1" max="24"></div>';
   h+='<div class="form-group" style="justify-content:flex-end;align-items:center;gap:6px;flex-direction:row"><input id="rRamOT" type="checkbox" style="width:16px;height:16px"><label for="rRamOT" style="margin:0;cursor:pointer">Ramadan OT?</label></div>';
+  h+='<div class="form-group" style="justify-content:flex-end;align-items:center;gap:6px;flex-direction:row"><input id="rOTAgree" type="checkbox" style="width:16px;height:16px"><label for="rOTAgree" style="margin:0;cursor:pointer" title="Monthly OT: days present beyond the month\'s working-day quota pay an OT premium">OT Agreement?</label></div>';
   h+='<div class="form-group"><label>Start Month</label><input id="rStartM" type="number" min="1" max="12" value="1"></div>';
   h+='<div class="form-group"><label>Start Year</label><input id="rStartY" type="number" value="2025"></div>';
   h+='<div style="align-self:flex-end"><button class="btn btn-primary btn-sm" id="rAddBtn" onclick="addRate()"><i class="fas fa-plus"></i> Add</button></div></div>';
-  h+='<table class="cfg-table"><tr><th>Vendor</th><th>Rate (AED)</th><th>Contract Hrs</th><th>OT Mult</th><th>Ramadan Hrs</th><th>OT?</th><th>From</th><th></th></tr>';
+  h+='<table class="cfg-table"><tr><th>Vendor</th><th>Rate (AED)</th><th>Contract Hrs</th><th>OT Mult</th><th>Ramadan Hrs</th><th>OT?</th><th>OT Agree?</th><th>From</th><th></th></tr>';
   rates.forEach(function(r){
     var ramH=r.ramadanHours||(r.hoursPerDay||10);
     var ramOT=r.ramadanOT?'<i class="fas fa-check" style="color:var(--primary)"></i>':'—';
+    var otAgree=r.otAgreement?'<i class="fas fa-check" style="color:var(--primary)"></i>':'—';
     h+='<tr>';
     h+='<td>'+r.vendorName+'</td><td>'+fmt(r.baseRate)+'</td>';
     h+='<td>'+(r.hoursPerDay||10)+' hrs</td>';
     h+='<td>'+(r.otMultiplier||1.5)+'×</td>';
     h+='<td>'+ramH+' hrs</td><td>'+ramOT+'</td>';
+    h+='<td>'+otAgree+'</td>';
     h+='<td>'+r.effectiveStartMonth+'/'+r.effectiveStartYear+'</td>';
     h+='<td style="display:flex;gap:4px">';
-    h+='<button class="btn btn-sm btn-outline" onclick="editRate(\''+r.id+'\',\''+r.vendorName+'\','+r.baseRate+','+(r.hoursPerDay||10)+','+(r.otMultiplier||1.5)+','+ramH+','+(r.ramadanOT?1:0)+','+r.effectiveStartMonth+','+r.effectiveStartYear+')" title="Edit"><i class="fas fa-edit"></i></button>';
+    h+='<button class="btn btn-sm btn-outline" onclick="editRate(\''+r.id+'\',\''+r.vendorName+'\','+r.baseRate+','+(r.hoursPerDay||10)+','+(r.otMultiplier||1.5)+','+ramH+','+(r.ramadanOT?1:0)+','+r.effectiveStartMonth+','+r.effectiveStartYear+','+(r.otAgreement?1:0)+')" title="Edit"><i class="fas fa-edit"></i></button>';
     h+='<button class="btn btn-sm btn-outline" onclick="deleteRate(\''+r.id+'\')" title="Delete"><i class="fas fa-trash"></i></button>';
     h+='</td></tr>';
   });
@@ -2913,6 +2921,7 @@ function addRate(){
     otMultiplier:parseFloat(document.getElementById('rOTMult').value)||1.5,
     ramadanHours:parseFloat(document.getElementById('rRamHours').value)||parseFloat(document.getElementById('rHours').value)||10,
     ramadanOT:document.getElementById('rRamOT').checked,
+    otAgreement:document.getElementById('rOTAgree').checked,
     effectiveStartMonth:parseInt(document.getElementById('rStartM').value)||1,
     effectiveStartYear:parseInt(document.getElementById('rStartY').value)||2025,
     effectiveEndMonth:null,effectiveEndYear:null};
@@ -2920,13 +2929,14 @@ function addRate(){
   google.script.run.withSuccessHandler(function(r){APP.config.vendor_rates=r;renderSettingsTab('rates');showToast('Rate added','success');}).addConfigEntry('vendor_rates',e);
 }
 function deleteRate(id){google.script.run.withSuccessHandler(function(r){APP.config.vendor_rates=r;renderSettingsTab('rates');showToast('Deleted','success');}).deleteConfigEntry('vendor_rates',id);}
-function editRate(id,name,rate,hours,otMult,ramH,ramOT,month,year){
+function editRate(id,name,rate,hours,otMult,ramH,ramOT,month,year,otAgree){
   document.getElementById('rVendor').value=name;
   document.getElementById('rRate').value=rate;
   document.getElementById('rHours').value=hours;
   document.getElementById('rOTMult').value=otMult||1.5;
   document.getElementById('rRamHours').value=ramH||hours;
   document.getElementById('rRamOT').checked=ramOT===1||ramOT===true;
+  document.getElementById('rOTAgree').checked=otAgree===1||otAgree===true;
   document.getElementById('rStartM').value=month;
   document.getElementById('rStartY').value=year;
   var btn=document.getElementById('rAddBtn');
@@ -2937,7 +2947,8 @@ function updateRate(id){
     hoursPerDay:parseFloat(document.getElementById('rHours').value)||10,
     otMultiplier:parseFloat(document.getElementById('rOTMult').value)||1.5,
     ramadanHours:parseFloat(document.getElementById('rRamHours').value)||parseFloat(document.getElementById('rHours').value)||10,
-    ramadanOT:document.getElementById('rRamOT').checked};
+    ramadanOT:document.getElementById('rRamOT').checked,
+    otAgreement:document.getElementById('rOTAgree').checked};
   if(!fields.baseRate){showToast('Enter valid rate','error');return;}
   google.script.run.withSuccessHandler(function(r){APP.config.vendor_rates=r;renderSettingsTab('rates');showToast('Rate updated','success');}).updateConfigEntry('vendor_rates',id,fields);
 }

@@ -13,7 +13,8 @@
       "ramadanHours": 10,
       "ramadanOT": false,
       "holidayOT": true,
-      "holidayOTMult": 1.5
+      "holidayOTMult": 1.5,
+      "otAgreement": false
     },
     {
       "id": "vr_transguard",
@@ -28,7 +29,8 @@
       "ramadanHours": 10,
       "ramadanOT": false,
       "holidayOT": false,
-      "holidayOTMult": 1.5
+      "holidayOTMult": 1.5,
+      "otAgreement": false
     },
     {
       "id": "vr_wesource",
@@ -43,7 +45,8 @@
       "ramadanHours": 10,
       "ramadanOT": false,
       "holidayOT": true,
-      "holidayOTMult": 1.5
+      "holidayOTMult": 1.5,
+      "otAgreement": false
     },
     {
       "id": "vr_zone",
@@ -58,7 +61,8 @@
       "ramadanHours": 10,
       "ramadanOT": false,
       "holidayOT": true,
-      "holidayOTMult": 1.5
+      "holidayOTMult": 1.5,
+      "otAgreement": false
     },
     {
       "id": "vr_trumax",
@@ -73,7 +77,8 @@
       "ramadanHours": 10,
       "ramadanOT": false,
       "holidayOT": true,
-      "holidayOTMult": 1.5
+      "holidayOTMult": 1.5,
+      "otAgreement": false
     },
     {
       "id": "vr_sanket",
@@ -88,7 +93,8 @@
       "ramadanHours": 10,
       "ramadanOT": false,
       "holidayOT": true,
-      "holidayOTMult": 1.5
+      "holidayOTMult": 1.5,
+      "otAgreement": false
     },
     {
       "id": "vr_mtm",
@@ -103,7 +109,8 @@
       "ramadanHours": 10,
       "ramadanOT": false,
       "holidayOT": true,
-      "holidayOTMult": 1.5
+      "holidayOTMult": 1.5,
+      "otAgreement": false
     },
     {
       "id": "vr_jumbo",
@@ -118,7 +125,8 @@
       "ramadanHours": 10,
       "ramadanOT": false,
       "holidayOT": false,
-      "holidayOTMult": 1.5
+      "holidayOTMult": 1.5,
+      "otAgreement": false
     }
   ],
   "employee_costs": [
@@ -142,24 +150,6 @@
       "date": "2026-06-15",
       "country": "UAE",
       "id": "1785414562097"
-    },
-    {
-      "name": "Eid Al Adha (Day 1)",
-      "date": "2026-05-23",
-      "country": "UAE",
-      "id": "1787751868095"
-    },
-    {
-      "name": "Eid Al Adha (Day 2)",
-      "date": "2026-05-24",
-      "country": "UAE",
-      "id": "1787751883124"
-    },
-    {
-      "name": "Eid Al Adha (Day 3)",
-      "date": "2026-05-25",
-      "country": "UAE",
-      "id": "1787751896134"
     }
   ],
   "ramadan": {
