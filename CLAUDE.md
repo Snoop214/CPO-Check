@@ -524,6 +524,21 @@ Alternatively: set up auto-fetch in Settings → Fetch All Data → Auto-schedul
 
 ## Critical Bugs Fixed — Do Not Re-Introduce
 
+### config/app_config.json — stale-checkout data loss (found 2 Sept 2026)
+- Admins edit `config/app_config.json` live from the deployed app's Settings
+  UI (GitHub Contents API read-SHA/PUT-content), completely independent of
+  any local git checkout. Commit `2200fa2` (a code change to `vendor_rates`
+  made from a local clone that predated 3 admin-added holidays from 26 Aug)
+  was pushed without first pulling latest `main`, and silently dropped those
+  3 holidays (`Eid Al Adha` days 1–3, 2026-05-23/24/25) even though the
+  commit's own diff had nothing to do with holidays — it just carried an
+  outdated copy of the whole file. Restored in a follow-up commit.
+- **Rule**: before editing `config/app_config.json` (or any file the live app
+  can also write to — currently just this one), always `git pull` first,
+  even mid-session, since the admin may have saved a Settings change through
+  the app at any point. Never assume a local checkout from earlier in the
+  session is still current for this specific file.
+
 ### Static Shim (index.html)
 - **Proxy handler must return `_proxy`**: `withSuccessHandler` and `withFailureHandler` MUST return `_proxy` (not `runner`). If they return `runner`, the next chained call fails with "not a function".
 - **Admin role check must be lowercase**: `(APP.user.role||'').toLowerCase()==='admin'` — users.json has `"Admin"` with capital A; all role checks must use `.toLowerCase()`
