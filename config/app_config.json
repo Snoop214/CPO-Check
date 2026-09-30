@@ -143,6 +143,22 @@
       "effectiveEndMonth": null,
       "effectiveEndYear": null,
       "id": "1790758304532"
+    },
+    {
+      "vendorName": "Skillset",
+      "baseRate": 2750,
+      "hoursPerDay": 12,
+      "otMultiplier": 1.5,
+      "ramadanHours": 12,
+      "ramadanOT": false,
+      "holidayOT": false,
+      "holidayOTMult": 1.5,
+      "otAgreement": false,
+      "effectiveStartMonth": 1,
+      "effectiveStartYear": 2025,
+      "effectiveEndMonth": null,
+      "effectiveEndYear": null,
+      "id": "1790758373890"
     }
   ],
   "employee_costs": [
