@@ -130,8 +130,8 @@
     },
     {
       "vendorName": "Infotech",
-      "baseRate": 0,
-      "hoursPerDay": 10,
+      "baseRate": 2750,
+      "hoursPerDay": 12,
       "otMultiplier": 1.5,
       "ramadanHours": 10,
       "ramadanOT": false,
