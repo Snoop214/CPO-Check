@@ -133,7 +133,7 @@
       "baseRate": 2750,
       "hoursPerDay": 12,
       "otMultiplier": 1.5,
-      "ramadanHours": 10,
+      "ramadanHours": 12,
       "ramadanOT": false,
       "holidayOT": false,
       "holidayOTMult": 1.5,
