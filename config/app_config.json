@@ -173,6 +173,15 @@
       "baseCost": 25000,
       "effectiveStartMonth": 1,
       "effectiveStartYear": 2024
+    },
+    {
+      "role": "Champion",
+      "baseCost": 0,
+      "effectiveStartMonth": 1,
+      "effectiveStartYear": 2026,
+      "effectiveEndMonth": null,
+      "effectiveEndYear": null,
+      "id": "1791049229885"
     }
   ],
   "working_days": [],
