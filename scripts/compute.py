@@ -32,8 +32,22 @@ CONFIG_DIR = os.path.join(os.path.dirname(__file__), '..', 'config')
 # only expected to hold a rolling window (~40-50 days); once a day is archived
 # and older than FREEZE_DAYS, it is never overwritten again — this is what stops
 # a past month from silently going to zero if the live sheet's window moves on.
+# 30 days gives ops a full month to finish entering/correcting a day's shift
+# rows (e.g. a newly onboarded 3PL whose data arrives late) before it locks.
 DAILY_ARCHIVE_DIR = os.path.join(DATA_DIR, 'daily_attendance')
-FREEZE_DAYS = 3
+FREEZE_DAYS = 30
+
+# Separate freeze windows for the COMPUTED output files (cpo_daily_*.json /
+# cpo_weekly_*.json / cpo_monthly_*.json) — these are usually recomputed
+# every run from whatever's in the raw archive + current config, but once a
+# period is old enough that it's considered "settled", it locks permanently
+# so later config changes (a corrected vendor rate, a backfilled holiday,
+# etc.) can never silently rewrite old, already-reported history.
+#   daily   → frozen 30 days after that day
+#   weekly  → frozen 10 complete weeks (70 days) after the week ends
+#   monthly → frozen 3 complete calendar months after the month ends
+OUTPUT_FREEZE_DAILY_DAYS  = 30
+OUTPUT_FREEZE_WEEKLY_DAYS = 70
 # A picker doesn't get paid for 1 hour if they clock in >30min after their
 # scheduled start, or clock out >30min before their scheduled end (either
 # trigger, capped at 1 hour deducted per day, never 2).
@@ -69,6 +83,27 @@ def save_json(filename, obj):
     with open(path, 'w') as f:
         json.dump(obj, f, separators=(',', ':'))
     print(f'  saved {filename}')
+
+def _output_period_frozen(filename, end_date, period_type):
+    """True if the computed output file `filename` already exists AND its
+    period is old enough to be considered settled (see the OUTPUT_FREEZE_*
+    constants above) — in which case it should be left untouched rather
+    than recomputed/overwritten this run. `end_date` is the last calendar
+    day the period covers (the day itself for daily, the week-ending date
+    for weekly, the month's last day for monthly)."""
+    path = os.path.join(DATA_DIR, filename)
+    if not os.path.exists(path):
+        return False
+    today = date.today()
+    if period_type == 'daily':
+        return (today - end_date).days > OUTPUT_FREEZE_DAILY_DAYS
+    if period_type == 'weekly':
+        return (today - end_date).days > OUTPUT_FREEZE_WEEKLY_DAYS
+    # monthly: frozen once 3 complete calendar months have elapsed after the
+    # month's end — e.g. June (ends June 30) freezes starting October 1,
+    # since July + August + September are 3 fully-completed months by then.
+    cutoff = end_date.replace(day=1) + relativedelta(months=4)
+    return today >= cutoff
 
 # ── Helpers ──────────────────────────────────────────────────────
 # Known misspellings/variants in the ops attendance sheet that don't match
@@ -138,57 +173,6 @@ def get_working_days(month, year, overrides):
     if month == 2: return 24
     days_in_month = 31 if month in (1,3,5,7,8,10,12) else 30
     return 27 if days_in_month == 31 else 26
-
-# A day/week/month 'closes' FREEZE_DAYS after it ends (same grace window as
-# the attendance archive, so late attendance corrections still land). Once a
-# closed period has a cpo_*.json file on disk, it is never recomputed again —
-# a vendor rate / setting change (Base Rate, Holiday OT, etc.) only affects
-# periods still open (today, the current week/month, and the FREEZE_DAYS
-# grace tail after each) and anything from here forward. A period with no
-# existing file yet is always computed regardless of age (self-heals a gap
-# left by a previously-failed run).
-
-# Field names that MUST be present on every store result in a cpo_*.json file.
-# A frozen file computed before one of these fields existed (e.g. holOtDays/
-# holOtCost, added 2 Sept 2026 for the Payment Detail Holiday OT columns) is
-# missing it entirely, not just zero — so it needs a one-time backfill even
-# though the period itself is closed. This mirrors the attendance archive's
-# 'status' migration escape hatch: self-limiting, because once a file has the
-# field it never triggers this branch again, and it never touches `cost` or
-# any other already-computed number — only adds fields that were previously
-# absent, using the same historical inputs as the original computation.
-REQUIRED_STORE_FIELDS = ('holOtDays', 'holOtCost')
-
-def _needs_field_backfill(path):
-    try:
-        with open(path) as f:
-            existing = json.load(f)
-        stores = existing.get('data', [])
-        if not stores:
-            return False  # nothing to check against — leave it frozen
-        return any(field not in stores[0] for field in REQUIRED_STORE_FIELDS)
-    except Exception:
-        return True  # unreadable/corrupt — safest to recompute
-
-def _period_closed(kind, date_label, today):
-    # Same FREEZE_DAYS grace window as the attendance archive: a period isn't
-    # frozen the instant it ends — it stays open a few more days so ops'
-    # late attendance corrections still flow through — then freezes for good.
-    try:
-        if kind == 'daily':
-            d = datetime.strptime(date_label[:10], '%Y-%m-%d').date()
-            return (today - d).days > FREEZE_DAYS
-        if kind == 'weekly':
-            start = datetime.strptime(date_label[:10], '%Y-%m-%d').date()
-            week_end = start + timedelta(days=6)
-            return (today - week_end).days > FREEZE_DAYS
-        if kind == 'monthly':
-            y, m = int(date_label[:4]), int(date_label[5:7])
-            month_end = date(y, m, calendar.monthrange(y, m)[1])
-            return (today - month_end).days > FREEZE_DAYS
-    except Exception:
-        return False
-    return False
 
 def resolve_effective_rate(rates, month, year, dept_norm):
     """Find the most recent vendor rate effective for this month/year."""
@@ -758,8 +742,6 @@ def compute_cpo(period, date_index, orders, attend, master, cfg, is_mtd=False):
         total_deduction_cost = 0
         total_ot_days = 0
         total_ot_cost = 0
-        total_hol_ot_days = 0
-        total_hol_ot_cost = 0
         dept_set = set()
         picker_days_list = []
         daily_counts = {}
@@ -836,15 +818,6 @@ def compute_cpo(period, date_index, orders, attend, master, cfg, is_mtd=False):
                     daily_rate = rate / work_days
                     ot_mult    = vm.get('ot_mult', 1.5)
                     hol_extra  = hol_days * daily_rate * (vm.get('holiday_ot_mult', ot_mult) - 1) if vm.get('holiday_ot', True) else 0
-                    # Holiday OT (separate from the 'OT Agreement' monthly OT
-                    # above): the extra premium paid for days worked on a public
-                    # holiday, ONLY for 3PLs with 'Holiday OT?' enabled in Vendor
-                    # Rates (vm['holiday_ot']). Exposed as its own field so Payment
-                    # Detail can show an OT column/amount without conflating it with
-                    # the days-beyond-quota OT above. Zero for any vendor with
-                    # holiday_ot=False, by construction (hol_extra is already 0 there).
-                    hol_ot_days = hol_days if vm.get('holiday_ot', True) else 0
-                    hol_ot_cost = hol_extra
                     ram_extra  = 0
                     hr_rate    = daily_rate / v_hours if v_hours > 0 else 0
                     if ram_days > 0 and vm.get('ramadan_ot'):
@@ -888,8 +861,6 @@ def compute_cpo(period, date_index, orders, attend, master, cfg, is_mtd=False):
                     total_deduction_cost += deduction_cost
                     total_ot_days  += ot_days
                     total_ot_cost  += ot_value
-                    total_hol_ot_days += hol_ot_days
-                    total_hol_ot_cost += hol_ot_cost
                     dept_set.add(dept)
                     picker_days_list.append({'days': total_p, 'dept': dept, 'rate': rate, 'hours': v_hours,
                                               'shopperId': pk.get('shopperId', ''), 'name': pk.get('name', ''),
@@ -899,8 +870,6 @@ def compute_cpo(period, date_index, orders, attend, master, cfg, is_mtd=False):
                                               'onLeaveDays': round(on_leave_days, 2),
                                               'otDays': round(ot_days, 2),
                                               'otValue': round(ot_value, 2),
-                                              'holOtDays': round(hol_ot_days, 2),
-                                              'holOtCost': round(hol_ot_cost, 2),
                                               'fullSalaryFloor': full_salary_floor,
                                               'cost': round(this_cost, 2)})
                     bv = by_vendor.setdefault(dept, {'cost': 0, 'pickerCount': 0, 'presentDays': 0})
@@ -962,8 +931,6 @@ def compute_cpo(period, date_index, orders, attend, master, cfg, is_mtd=False):
                 'lateEarlyDeductionCost': round(total_deduction_cost),
                 'otDays': round(total_ot_days, 2),
                 'otCost': round(total_ot_cost),
-                'holOtDays': round(total_hol_ot_days, 2),
-                'holOtCost': round(total_hol_ot_cost),
                 'relieverInfo': reliever_info,
                 'byVendor': {v: {'cost': round(d['cost']), 'pickerCount': d['pickerCount'],
                                   'presentDays': round(d['presentDays'], 2)}
@@ -977,8 +944,6 @@ def compute_cpo(period, date_index, orders, attend, master, cfg, is_mtd=False):
                              'deductionCost': p.get('deductionCost', 0),
                              'otDays': p.get('otDays', 0),
                              'otValue': p.get('otValue', 0),
-                             'holOtDays': p.get('holOtDays', 0),
-                             'holOtCost': p.get('holOtCost', 0),
                              'fullSalaryFloor': p.get('fullSalaryFloor', False),
                              'cost': p.get('cost', 0)}
                             for p in picker_days_list],
@@ -1039,63 +1004,68 @@ def main():
     save_json('hourly_gmv.json', hourly_data['gmv'])
     save_json('timing.json',     hourly_data['timing'])
 
-    # 3. Compute MTD summary — MTD is always the current, still-running
-    # month, so it is always recomputed (never frozen).
+    # 3. Compute MTD summary
     print('Computing MTD...')
     mtd_result = compute_cpo('mtd', -1, raw['mtd']['orders'], raw['mtd']['attend'], master, cfg, is_mtd=True)
     save_json('cpo_mtd_summary.json', mtd_result)
 
-    today = date.today()
-
-    # 4. Compute all daily dates — a day before today is 'closed'; once its
-    # cpo_daily_*.json exists, a later Settings change (e.g. vendor rate,
-    # Holiday OT) must NOT silently rewrite it. Only today (still open) and
-    # any missing file (self-heal) get (re)computed.
+    # 4. Compute all daily dates (skip ones already settled — see
+    #    _output_period_frozen; frozen once the day is >30 days old)
     dates_mtd = raw['mtd']['orders'].get('dates', [])
     print(f'Computing {len(dates_mtd)} daily dates...')
-    daily_done, daily_frozen = 0, 0
+    computed, frozen = 0, 0
     for i, dl in enumerate(dates_mtd):
         fname = f'cpo_daily_{dl}.json'
-        full_path = os.path.join(DATA_DIR, fname)
-        if _period_closed('daily', dl, today) and os.path.exists(full_path) and not _needs_field_backfill(full_path):
-            daily_frozen += 1
+        try:
+            end_date = datetime.strptime(dl[:10], '%Y-%m-%d').date()
+        except ValueError:
+            end_date = None
+        if end_date and _output_period_frozen(fname, end_date, 'daily'):
+            frozen += 1
             continue
         r = compute_cpo('mtd', i, raw['mtd']['orders'], raw['mtd']['attend'], master, cfg, is_mtd=False)
         save_json(fname, r)
-        daily_done += 1
-    print(f'  daily: {daily_done} computed, {daily_frozen} frozen (already-closed)')
+        computed += 1
+    print(f'  {computed} computed, {frozen} already-settled days left untouched')
 
-    # 5. Compute all weekly dates — same freeze rule: a week that has fully
-    # elapsed is never recomputed again once its file exists.
+    # 5. Compute all weekly dates (frozen once 10 complete weeks — 70 days —
+    #    past the week-ending date)
     dates_weekly = raw['weekly']['orders'].get('dates', [])
     print(f'Computing {len(dates_weekly)} weekly dates...')
-    weekly_done, weekly_frozen = 0, 0
+    computed, frozen = 0, 0
     for i, dl in enumerate(dates_weekly):
         fname = f'cpo_weekly_{dl[:10]}.json'
-        full_path = os.path.join(DATA_DIR, fname)
-        if _period_closed('weekly', dl, today) and os.path.exists(full_path) and not _needs_field_backfill(full_path):
-            weekly_frozen += 1
+        try:
+            end_date = datetime.strptime(dl[:10], '%Y-%m-%d').date()
+        except ValueError:
+            end_date = None
+        if end_date and _output_period_frozen(fname, end_date, 'weekly'):
+            frozen += 1
             continue
         r = compute_cpo('weekly', i, raw['weekly']['orders'], raw['weekly']['attend'], master, cfg, is_mtd=False)
         save_json(fname, r)
-        weekly_done += 1
-    print(f'  weekly: {weekly_done} computed, {weekly_frozen} frozen (already-closed)')
+        computed += 1
+    print(f'  {computed} computed, {frozen} already-settled weeks left untouched')
 
-    # 6. Compute all monthly dates — same freeze rule: a month that has fully
-    # elapsed is never recomputed again once its file exists.
+    # 6. Compute all monthly dates (frozen once 3 complete calendar months
+    #    past the month's end)
     dates_monthly = raw['monthly']['orders'].get('dates', [])
     print(f'Computing {len(dates_monthly)} monthly dates...')
-    monthly_done, monthly_frozen = 0, 0
+    computed, frozen = 0, 0
     for i, dl in enumerate(dates_monthly):
         fname = f'cpo_monthly_{dl[:7]}.json'
-        full_path = os.path.join(DATA_DIR, fname)
-        if _period_closed('monthly', dl, today) and os.path.exists(full_path) and not _needs_field_backfill(full_path):
-            monthly_frozen += 1
+        try:
+            y, m = int(dl[:4]), int(dl[5:7])
+            end_date = date(y, m, calendar.monthrange(y, m)[1])
+        except (ValueError, IndexError):
+            end_date = None
+        if end_date and _output_period_frozen(fname, end_date, 'monthly'):
+            frozen += 1
             continue
         r = compute_cpo('monthly', i, raw['monthly']['orders'], raw['monthly']['attend'], master, cfg, is_mtd=False)
         save_json(fname, r)
-        monthly_done += 1
-    print(f'  monthly: {monthly_done} computed, {monthly_frozen} frozen (already-closed)')
+        computed += 1
+    print(f'  {computed} computed, {frozen} already-settled months left untouched')
 
     # 7. Write meta file — date lists, sync info, timestamp
     # Merge with any existing historical JSON files in data/ so old weeks/months

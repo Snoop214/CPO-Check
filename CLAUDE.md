@@ -1,5 +1,5 @@
 # CPO (Cost Per Order) — talabat LS
-# Last Updated: 2 September 2026
+# Last Updated: 5 October 2026
 
 ## What This App Does
 Store-level Cost Per Order (CPO) + Picker Utilization Rate (UTR) tracking.
@@ -68,7 +68,8 @@ The old design read 3 separate pre-aggregated pivot tabs (`MTD Know`/`Weekly Kno
 ### New design
 - **Single source**: one flat "Daily Attendance" shift-log sheet (see Sheet Tabs above) replaces all 3 Know tabs. `read_daily_attendance_log()` reads it and groups rows by calendar day (day = the shift's `Scheduled Start Time` date, since Absent/On Leave/Scheduled rows have no actual clock times).
 - **Permanent archive**: `archive_daily_attendance()` writes one file per calendar day to `data/daily_attendance/YYYY-MM-DD.json` (`{"date":..., "records":[{vendorId, shopperId, name, userType, department, present, deduction}, ...]}`).
-- **Freeze rule**: a day older than `FREEZE_DAYS` (3) is **never overwritten** once a file exists for it — this is what stops a past month from silently zeroing out again. A day with no existing file is always written regardless of age, so a gap from a previously-failed run self-heals as long as the live sheet still shows that date.
+- **Freeze rule**: a day older than `FREEZE_DAYS` (30) is **never overwritten** once a file exists for it — this is what stops a past month from silently zeroing out again. A day with no existing file is always written regardless of age, so a gap from a previously-failed run self-heals as long as the live sheet still shows that date. 30 days (not 3) gives ops a full month to finish entering or correcting a day's shift rows — e.g. a newly onboarded 3PL whose attendance starts arriving a few weeks late — before that day locks permanently. One-time migration note: a frozen day whose archive predates the `status` field (added 1 Sept 2026) is upgraded in place the first time it's re-read with real status data still available in the live sheet — see `archive_daily_attendance()`'s `needs_migration` check — this is self-limiting and never fires again once every day has a `status` field.
+- **Output-level freeze (separate from the raw archive freeze above)**: `cpo_daily_*.json` / `cpo_weekly_*.json` / `cpo_monthly_*.json` are normally recomputed from scratch every run (reflecting the latest raw archive + current config), but `_output_period_frozen()` skips recomputing — and leaves the existing file untouched — once a period is "settled": daily frozen 30 days after that day, weekly frozen 10 complete weeks (70 days) after the week-ending date, monthly frozen 3 complete calendar months after the month's end (e.g. June freezes starting October 1). This protects settled history from ever silently changing due to a later config correction (a fixed vendor rate, a backfilled holiday, etc.), while still giving each period a generous window to reflect corrections before it locks. Never shorten these windows without being asked — they were deliberately widened from an earlier, too-aggressive 3-day raw-archive freeze that caused newly onboarded 3PLs to show almost no data (see "Critical Bugs Fixed" below).
 - **MTD/Weekly/Monthly built from the archive, not from the live sheet**: `build_attend_struct()` reads whatever calendar days are archived and sums them into the exact same `{'dates','byStore'}` shape `compute_cpo()` already expected, so `compute_cpo()`'s core logic needed almost no changes. The live "Daily Attendance" sheet only needs to hold a rolling ~40-day window going forward — anything older is safe because it's already frozen in `data/daily_attendance/`.
 - **The live sheet was seeded once (1 Sept 2026) with a full year of history** (Jan–Sep) specifically so the first run after this change would archive all of it permanently before the sheet gets trimmed down to a 40-day rolling window for ongoing daily use.
 
@@ -80,9 +81,30 @@ A picker is not paid for 1 hour on any shift where **either**: actual clock-in i
 - Store-level result now includes `lateEarlyDeductionDays` and `lateEarlyDeductionCost` fields for visibility.
 - This does **not** touch UTR/`total_hours` — it's a pay policy on top of the existing hours assumption, not a claim about actual hours worked.
 
+### Real Present/Absent/On-Leave status tracking (added 5 Oct 2026)
+Previously attendance was a single binary present flag — Absent, On Leave, and Scheduled-but-no-show all collapsed into "not present". Now:
+- `read_daily_attendance_log()` stores the raw `status` string per shift record plus derived `absent` (1 if status is exactly "Absent") and `onLeave` (1 if status contains "leave") flags, alongside the existing `present` flag. "Scheduled" rows (a shift that hasn't happened yet) count toward none of the three.
+- `build_attend_struct()` carries parallel `absences`/`onLeaves` arrays alongside `values`/`deductions`.
+- `compute_cpo()` surfaces `absentDays`/`onLeaveDays` per picker in the `pickers` array (used by the Payment Detail tab).
+- **One-time migration**: `archive_daily_attendance()` has a narrow escape hatch that re-writes an already-frozen day **only if its existing archive file is missing the `status` field** (i.e. it predates this change) — this let all ~320 already-archived days pick up real status data once, while the live sheet still had it, without weakening the freeze rule going forward. Do not generalize this into a standing override.
+
+### Duplicate shift-row de-duplication (fixed 5 Oct 2026 — "43 present days in a 30-day month" bug)
+The source "Daily Attendance" sheet can carry more than one shift row for the same picker on the same calendar day (e.g. a corrected/re-entered row sitting next to the original — this is normal, not a data error). `build_attend_struct()` previously summed every row for Weekly/Monthly periods with no per-day cap, so duplicate rows silently inflated a picker's present/absent/on-leave days past the number of calendar days in the period (one real case: 43 present + 4 absent + 4 on-leave days reported for June, a 30-day month).
+- Fixed by reducing every calendar day's rows for a given (vendorId, shopperId) to **one day-slot** before adding it to any per-picker total, via a priority level (`present(2) > onLeave(1) > absent(0)`) so the result is **independent of row order** in the source sheet — a later "Absent" row can never clobber an earlier "Present" one or vice versa.
+- MTD was already safe (it already capped at `min(1, ...)` per day); this fix only changes Weekly/Monthly, which previously had no per-day cap at all.
+- **Never remove this per-day dedup step** — reverting to a flat per-record sum reintroduces the over-counting bug.
+
+### OT days + full-salary floor (added 5 Oct 2026, Monthly period only)
+- **Per-vendor `otAgreement` config flag** (`config/app_config.json` → `vendor_rates[].otAgreement`, default `false`) — editable per vendor via Settings → Vendor Rates ("OT Agreement?" checkbox), same GitHub-token write path as the other vendor-rate fields. Never hardcode which 3PLs get this — it must come from this config field.
+- **OT days** = `max(0, total_p - work_days)` for that month — days present beyond the month's official working-day quota — paid an OT **premium** (`ot_days × daily_rate × (otMultiplier - 1)`) on top of the already-included linear per-day pay, but **only** if the picker's vendor has `otAgreement: true`. If false, over-quota days still get paid at the normal linear day-rate exactly as before (unchanged behavior) — just no premium bonus.
+- **Full-salary floor**: if a picker's `present + onLeave` days cover **every calendar day in that month** (i.e. zero real absences — they either worked or were on approved leave every day), their base pay is floored at the full monthly rate (`max(daily_rate × total_p, rate)`) — on-leave days count as paid leave rather than silently reducing pay below 100%. This is a **floor, never a cap**: it never reduces pay for someone who already earns more than the base rate via over-quota work.
+- Both are **Monthly-only** — a single week or day can't sensibly equal "a whole month", so neither rule applies to Weekly/Daily/MTD views.
+- Surfaced per picker as `otDays`, `otValue`, `fullSalaryFloor` (boolean) in the `pickers` array, and at store level as `otDays`/`otCost` totals. Shown in the Payment Detail tab (OT Days / OT Value columns, a green check badge on Total Cost when the floor applied) and CSV export.
+
 ### Constants (in `compute.py`)
 - `DAILY_ARCHIVE_DIR` = `data/daily_attendance/`
-- `FREEZE_DAYS = 3`
+- `FREEZE_DAYS = 30`
+- `OUTPUT_FREEZE_DAILY_DAYS = 30`, `OUTPUT_FREEZE_WEEKLY_DAYS = 70` (10 weeks); monthly uses a 3-calendar-month `relativedelta` cutoff, not a flat day count
 - `LATE_EARLY_THRESHOLD_MIN = 30`
 
 ---
@@ -173,10 +195,11 @@ A picker is not paid for 1 hour on any shift where **either**: actual clock-in i
 ---
 
 ## Navigation Tabs
-- **Dashboard** — MTD / Daily / Weekly / Monthly with filters
+- **Dashboard** — MTD / Daily / Weekly / Monthly with filters. Each store row is clickable (`togglePickerRow()`) and expands into a picker-level sub-table (Shopper ID, Picker Name, 3PL, Present Days, Deduction Days), sourced from the `pickers` array `compute_cpo()` emits per store.
 - **Historical & Trends** — trend line charts (daily/weekly/monthly) + date range calculator
 - **Store Map** — CPO-colored map markers per store (uses lat/lng from master data)
 - **Cost Optimizer** — ranked cost reduction options per store (see section below)
+- **Payment Detail** (added 1 Sept 2026) — flat, filterable picker-level payment/attendance table across Daily/Weekly/Monthly: Shopper ID, Name, 3PL, Vendor ID, Store, Chain, Present/Absent/On-Leave Days, Deduction Hours/Cost, OT Days/Value, Total Cost. Filters: Chain, Store, 3PL, free-text search. Built client-side (`renderPaymentDetail()` + `pd*` functions) by flattening the same per-store `pickers` array the Dashboard tab uses — reuses `getCPOData`/`APP.cache` under a separate `paydetail_*` cache-key prefix. CSV export via `pdExportCSV()`.
 - **Settings** — Vendor Rates, Employee Costs, Working Days, Optimizer Config, Fetch All Data (admin), User Access (admin), Email Reports (admin)
 
 ---
@@ -447,28 +470,6 @@ Alternatively: set up auto-fetch in Settings → Fetch All Data → Auto-schedul
 - OT cost = `otHrs × otMultiplier × hourlyRate × pickers × workDays`
 - `hourlyRate = monthRate / (wDays × contractHrs)`
 
-### Payment Detail — Holiday OT column (added 2 Sept 2026)
-- Payment Detail's "OT Days" / "OT Amount" columns show **Holiday OT only** —
-  the extra premium (`holOtDays`/`holOtCost` per picker, `holOtDays`/`holOtCost`
-  rolled up per store) paid for days worked on a public holiday, computed in
-  `compute_cpo()` right where the existing `hol_extra` is computed.
-- Gated per-3PL by the vendor's **Holiday OT?** checkbox in Settings → Vendor
-  Rates (`vm['holiday_ot']`, config field `holidayOT`): a vendor with Holiday
-  OT off always shows 0 in these columns, even for pickers who did work a
-  public holiday — they're still paid for the day (linear rate), just with no
-  OT premium and no OT day/amount shown.
-- This is a **different** field from the pre-existing `otDays`/`otValue`
-  (Monthly-only, gated by the separate **OT Agreement?** checkbox
-  `otAgreement` — days present beyond the month's working-day quota). They are
-  still computed in `compute.py` and still in every `cpo_*.json` file, but as
-  of 2 Sept 2026 they are **not shown as Payment Detail table/CSV columns** —
-  no vendor currently has `otAgreement` enabled, so those columns were always
-  0 for every row, next to the populated Holiday OT columns, which read as a
-  confusing duplicate "OT" pair. If a vendor ever gets `otAgreement` enabled,
-  re-add `otDays`/`otValue` as their own clearly-labeled columns (e.g. "OT
-  Days (Monthly)") rather than reusing the Holiday OT columns — they answer
-  different questions and can both be non-zero for the same picker.
-
 ## Headcount Reduction Cap
 - Headcount-reduction options (`headcount`, `trim_headcount`) never suggest cutting more than **1 picker** below current in a single recommendation, even if peak-hour capacity math would allow a bigger cut
 - `minPickers = max(theoreticalMinFromPeak, currentPickers - 1)` — re-evaluate after each step rather than jumping straight to a theoretical minimum
@@ -476,40 +477,6 @@ Alternatively: set up auto-fetch in Settings → Fetch All Data → Auto-schedul
 - No external reliever role — coverage during a picker's day off is either OT paid to a colleague (`covOTFull`/`covOTThis`) or, when no timing data exists, a flat OT-based estimate. Never reintroduce "reliever" as a distinct cost line in this flow (see also "Critical Bugs Fixed" below)
 
 ---
-
-## Recompute Freeze — closed periods never get rewritten by a Settings change (added 2 Sept 2026)
-- Every `compute.py` run used to recompute **every** `cpo_daily_*` / `cpo_weekly_*` /
-  `cpo_monthly_*` file on every run, using whatever Vendor Rates / Holiday OT /
-  Working Days config was live at that moment — so editing a rate in Settings
-  silently rewrote the cost of every past day/week/month the next time Actions ran.
-- `_period_closed(kind, date_label, today)` now marks a day/week/month "closed"
-  once it has fully ended **and** `FREEZE_DAYS` (3) has passed since — the exact
-  same grace window the attendance archive already uses, so late attendance
-  corrections still land before a period locks. `main()` skips recompute for any
-  closed period that already has a file on disk; a period with no existing file
-  yet is always computed regardless of age (self-heals a gap from a failed run).
-- Net effect: a Settings edit (rate, Holiday OT, contract hours, etc.) only
-  changes the **current** day/week/month and anything from here forward.
-  Already-closed Payment Detail / Dashboard numbers for past periods stay exactly
-  as first computed. This mirrors the GAS (Option A) `cpo_precomp_done` behavior
-  ("past months/weeks never recomputed") for Option B.
-- If a genuinely-closed period's numbers need correcting on purpose (e.g. a
-  backfilled rate correction that should apply retroactively), delete that
-  period's `data/cpo_*.json` file(s) so the next Actions run treats it as
-  missing and recomputes it — the same "no existing file → always compute"
-  self-heal rule used above, applied deliberately instead of by accident.
-- **Field-backfill escape hatch**: a frozen file computed before a new output
-  field existed (e.g. `holOtDays`/`holOtCost`, added 2 Sept 2026) is missing
-  that field entirely — `_needs_field_backfill()` detects this by checking the
-  first store result against `REQUIRED_STORE_FIELDS` and forces a one-time
-  recompute even for a closed period, so the field gets backfilled using the
-  same historical inputs. It never changes `cost` or any other already-present
-  number — only adds fields that didn't exist yet. Self-limiting: once a file
-  has the field, this never fires for it again. Mirrors the attendance
-  archive's own 'status' migration escape hatch. When adding a new per-store
-  output field in future, add its name to `REQUIRED_STORE_FIELDS` so existing
-  archives backfill it automatically on the next run instead of staying stuck
-  at 0/missing forever.
 
 ## Known Limitations
 - GAS execution limit: 6 minutes per call — handled by batch approach and 5-min budget in `scheduledFetch`
@@ -523,21 +490,6 @@ Alternatively: set up auto-fetch in Settings → Fetch All Data → Auto-schedul
 ---
 
 ## Critical Bugs Fixed — Do Not Re-Introduce
-
-### config/app_config.json — stale-checkout data loss (found 2 Sept 2026)
-- Admins edit `config/app_config.json` live from the deployed app's Settings
-  UI (GitHub Contents API read-SHA/PUT-content), completely independent of
-  any local git checkout. Commit `2200fa2` (a code change to `vendor_rates`
-  made from a local clone that predated 3 admin-added holidays from 26 Aug)
-  was pushed without first pulling latest `main`, and silently dropped those
-  3 holidays (`Eid Al Adha` days 1–3, 2026-05-23/24/25) even though the
-  commit's own diff had nothing to do with holidays — it just carried an
-  outdated copy of the whole file. Restored in a follow-up commit.
-- **Rule**: before editing `config/app_config.json` (or any file the live app
-  can also write to — currently just this one), always `git pull` first,
-  even mid-session, since the admin may have saved a Settings change through
-  the app at any point. Never assume a local checkout from earlier in the
-  session is still current for this specific file.
 
 ### Static Shim (index.html)
 - **Proxy handler must return `_proxy`**: `withSuccessHandler` and `withFailureHandler` MUST return `_proxy` (not `runner`). If they return `runner`, the next chained call fails with "not a function".
@@ -562,6 +514,12 @@ Alternatively: set up auto-fetch in Settings → Fetch All Data → Auto-schedul
 - **Never recompute weekly/monthly attendance directly from the live "Daily Attendance" sheet for old dates.** Always build them from `data/daily_attendance/*.json` via `build_attend_struct()`. The live sheet is a short rolling window (~40-50 days) — reading it directly for a month that's aged out of that window is exactly what silently zeroed June's cost before this rewrite.
 - **Never remove or weaken the `FREEZE_DAYS` check in `archive_daily_attendance()`.** A day older than `FREEZE_DAYS` with an existing archive file must never be overwritten, even if the live sheet currently shows different (or missing) data for that date — that's what makes the archive permanent instead of just a second copy of the same fragile live read.
 - Days with **no existing file are always written regardless of age** — this is intentional (self-heals gaps from a previously-failed run) and is not a bug.
+
+### Freeze window too short → new 3PLs showed almost no data (5 Oct 2026)
+- `FREEZE_DAYS` was originally `3` — far too short. A newly onboarded 3PL (e.g. "Infotech") whose attendance rows arrived even slightly late into the "Daily Attendance" sheet got locked out after just 3 days, well before ops could finish entering real data for those days.
+- Separately, the live "Daily Attendance" sheet itself can go stale (not actively edited by whatever process is supposed to keep it current) — if that happens, every day read during the stale window gets archived with incomplete data and then locks at 3 days old, long before the sheet catches up.
+- Fixed by widening `FREEZE_DAYS` to **30** (raw per-day archive) and adding separate, even more generous output-level freezes (`_output_period_frozen()`): 30 days daily, 10 complete weeks for weekly, 3 complete calendar months for monthly. **Do not shorten these back down** — the whole point is to give ops enough real-world time to finish/correct attendance entry before a period locks permanently.
+- If a 3PL still shows near-zero attendance despite this, the first thing to check is **whether the live "Daily Attendance" Google Sheet's `modifiedTime` is recent** — if it hasn't been touched in a while, the problem is upstream (nobody is adding new rows to the sheet the pipeline reads), not a bug in `compute.py`.
 
 ---
 
