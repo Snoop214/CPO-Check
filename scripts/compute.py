@@ -105,6 +105,28 @@ def _output_period_frozen(filename, end_date, period_type):
     cutoff = end_date.replace(day=1) + relativedelta(months=4)
     return today >= cutoff
 
+# Field names that MUST be present on every store result in a cpo_*.json file.
+# A frozen file computed before one of these fields existed (e.g. holOtDays/
+# holOtCost, added for the Payment Detail Holiday OT columns) is missing it
+# entirely, not just zero — so it needs a one-time backfill even though the
+# period itself is otherwise settled. Mirrors the attendance archive's
+# 'status' migration escape hatch: self-limiting, because once a file has the
+# field it never triggers this branch again, and it never touches `cost` or
+# any other already-computed number — only adds fields that were previously
+# absent, using the same historical inputs as the original computation.
+REQUIRED_STORE_FIELDS = ('holOtDays', 'holOtCost')
+
+def _needs_field_backfill(path):
+    try:
+        with open(path) as f:
+            existing = json.load(f)
+        stores = existing.get('data', [])
+        if not stores:
+            return False  # nothing to check against — leave it frozen
+        return any(field not in stores[0] for field in REQUIRED_STORE_FIELDS)
+    except Exception:
+        return True  # unreadable/corrupt — safest to recompute
+
 # ── Helpers ──────────────────────────────────────────────────────
 # Known misspellings/variants in the ops attendance sheet that don't match
 # the vendor name spelling used in config/app_config.json's vendor_rates.
@@ -742,6 +764,8 @@ def compute_cpo(period, date_index, orders, attend, master, cfg, is_mtd=False):
         total_deduction_cost = 0
         total_ot_days = 0
         total_ot_cost = 0
+        total_hol_ot_days = 0
+        total_hol_ot_cost = 0
         dept_set = set()
         picker_days_list = []
         daily_counts = {}
@@ -818,6 +842,15 @@ def compute_cpo(period, date_index, orders, attend, master, cfg, is_mtd=False):
                     daily_rate = rate / work_days
                     ot_mult    = vm.get('ot_mult', 1.5)
                     hol_extra  = hol_days * daily_rate * (vm.get('holiday_ot_mult', ot_mult) - 1) if vm.get('holiday_ot', True) else 0
+                    # Holiday OT (separate from the 'OT Agreement' monthly OT
+                    # below): the extra premium paid for days worked on a public
+                    # holiday, ONLY for 3PLs with 'Holiday OT?' enabled in Vendor
+                    # Rates (vm['holiday_ot']). Exposed as its own field so Payment
+                    # Detail can show an OT column/amount without conflating it with
+                    # the days-beyond-quota OT below. Zero for any vendor with
+                    # holiday_ot=False, by construction (hol_extra is already 0 there).
+                    hol_ot_days = hol_days if vm.get('holiday_ot', True) else 0
+                    hol_ot_cost = hol_extra
                     ram_extra  = 0
                     hr_rate    = daily_rate / v_hours if v_hours > 0 else 0
                     if ram_days > 0 and vm.get('ramadan_ot'):
@@ -861,6 +894,8 @@ def compute_cpo(period, date_index, orders, attend, master, cfg, is_mtd=False):
                     total_deduction_cost += deduction_cost
                     total_ot_days  += ot_days
                     total_ot_cost  += ot_value
+                    total_hol_ot_days += hol_ot_days
+                    total_hol_ot_cost += hol_ot_cost
                     dept_set.add(dept)
                     picker_days_list.append({'days': total_p, 'dept': dept, 'rate': rate, 'hours': v_hours,
                                               'shopperId': pk.get('shopperId', ''), 'name': pk.get('name', ''),
@@ -870,6 +905,8 @@ def compute_cpo(period, date_index, orders, attend, master, cfg, is_mtd=False):
                                               'onLeaveDays': round(on_leave_days, 2),
                                               'otDays': round(ot_days, 2),
                                               'otValue': round(ot_value, 2),
+                                              'holOtDays': round(hol_ot_days, 2),
+                                              'holOtCost': round(hol_ot_cost, 2),
                                               'fullSalaryFloor': full_salary_floor,
                                               'cost': round(this_cost, 2)})
                     bv = by_vendor.setdefault(dept, {'cost': 0, 'pickerCount': 0, 'presentDays': 0})
@@ -931,6 +968,8 @@ def compute_cpo(period, date_index, orders, attend, master, cfg, is_mtd=False):
                 'lateEarlyDeductionCost': round(total_deduction_cost),
                 'otDays': round(total_ot_days, 2),
                 'otCost': round(total_ot_cost),
+                'holOtDays': round(total_hol_ot_days, 2),
+                'holOtCost': round(total_hol_ot_cost),
                 'relieverInfo': reliever_info,
                 'byVendor': {v: {'cost': round(d['cost']), 'pickerCount': d['pickerCount'],
                                   'presentDays': round(d['presentDays'], 2)}
@@ -944,6 +983,8 @@ def compute_cpo(period, date_index, orders, attend, master, cfg, is_mtd=False):
                              'deductionCost': p.get('deductionCost', 0),
                              'otDays': p.get('otDays', 0),
                              'otValue': p.get('otValue', 0),
+                             'holOtDays': p.get('holOtDays', 0),
+                             'holOtCost': p.get('holOtCost', 0),
                              'fullSalaryFloor': p.get('fullSalaryFloor', False),
                              'cost': p.get('cost', 0)}
                             for p in picker_days_list],
@@ -1016,11 +1057,12 @@ def main():
     computed, frozen = 0, 0
     for i, dl in enumerate(dates_mtd):
         fname = f'cpo_daily_{dl}.json'
+        full_path = os.path.join(DATA_DIR, fname)
         try:
             end_date = datetime.strptime(dl[:10], '%Y-%m-%d').date()
         except ValueError:
             end_date = None
-        if end_date and _output_period_frozen(fname, end_date, 'daily'):
+        if end_date and _output_period_frozen(fname, end_date, 'daily') and not _needs_field_backfill(full_path):
             frozen += 1
             continue
         r = compute_cpo('mtd', i, raw['mtd']['orders'], raw['mtd']['attend'], master, cfg, is_mtd=False)
@@ -1035,11 +1077,12 @@ def main():
     computed, frozen = 0, 0
     for i, dl in enumerate(dates_weekly):
         fname = f'cpo_weekly_{dl[:10]}.json'
+        full_path = os.path.join(DATA_DIR, fname)
         try:
             end_date = datetime.strptime(dl[:10], '%Y-%m-%d').date()
         except ValueError:
             end_date = None
-        if end_date and _output_period_frozen(fname, end_date, 'weekly'):
+        if end_date and _output_period_frozen(fname, end_date, 'weekly') and not _needs_field_backfill(full_path):
             frozen += 1
             continue
         r = compute_cpo('weekly', i, raw['weekly']['orders'], raw['weekly']['attend'], master, cfg, is_mtd=False)
@@ -1054,12 +1097,13 @@ def main():
     computed, frozen = 0, 0
     for i, dl in enumerate(dates_monthly):
         fname = f'cpo_monthly_{dl[:7]}.json'
+        full_path = os.path.join(DATA_DIR, fname)
         try:
             y, m = int(dl[:4]), int(dl[5:7])
             end_date = date(y, m, calendar.monthrange(y, m)[1])
         except (ValueError, IndexError):
             end_date = None
-        if end_date and _output_period_frozen(fname, end_date, 'monthly'):
+        if end_date and _output_period_frozen(fname, end_date, 'monthly') and not _needs_field_backfill(full_path):
             frozen += 1
             continue
         r = compute_cpo('monthly', i, raw['monthly']['orders'], raw['monthly']['attend'], master, cfg, is_mtd=False)
