@@ -1,5 +1,5 @@
 # CPO (Cost Per Order) — talabat LS
-# Last Updated: 5 October 2026
+# Last Updated: 6 October 2026
 
 ## What This App Does
 Store-level Cost Per Order (CPO) + Picker Utilization Rate (UTR) tracking.
@@ -490,6 +490,14 @@ Alternatively: set up auto-fetch in Settings → Fetch All Data → Auto-schedul
 ---
 
 ## Critical Bugs Fixed — Do Not Re-Introduce
+
+### Weekly date label was read backwards — attendance paired with the WRONG week (fixed 6 Oct 2026)
+- **The bug**: `_period_date_range()` and `build_attend_struct()` both assumed the "Weekly order" sheet's date-row labels were the LAST day of that week ("week ending"). They are actually the FIRST day ("week starting"). Every weekly CPO computation was therefore pairing each week's orders total with attendance/holiday data from the **previous calendar week** — a full 7-day misalignment, silently wrong for as long as weekly computation has existed.
+- **How this was confirmed**: cross-checked the Weekly order tab's totals against summed daily order values for multiple store/week pairs. Example: store 717228, label `2026-09-27` — summing daily orders for Sep27+28+29 (the "week starting" reading, Sep30-Oct3 had no data yet) gives 17, an exact match to the Weekly column's value of 17. The "week ending" reading (summing Sep21-27) gives 31, which matches nothing. Repeated on two more store/week pairs with the same result (exact match on "starting", clear mismatch on "ending").
+- **The fix**: both functions now treat the label as the week's first day and build the 7-day window forward (`label` to `label+6`), not backward. `main()`'s weekly freeze-eligibility check now computes the real week-end as `label + 6 days` (it previously used the raw label itself as the end date).
+- **One-time migration**: every `cpo_weekly_*.json` ever written used the old, wrong direction — including ones already past the 70-day output freeze, which would otherwise never get recomputed again. `compute_cpo()` now stamps every weekly result with `'weekAnchor': 'start'`; `_needs_week_window_fix()` bypasses the freeze for any weekly file missing that stamp, regardless of age, exactly once. Self-limiting — once a file has the stamp it is never bypassed again. Do not remove this check until confirming (via `data/cpo_weekly_*.json` → `weekAnchor`) that every historical weekly file has been through it.
+- **Also fixed**: the weekly `dateLabel` now reads `"2026-09-27 to 2026-10-03"` instead of the bare start date, so this direction is unambiguous in the UI (Dashboard banner, Payment Detail header, CSV export filenames) going forward.
+- **Do not revert either function to a "week ending" interpretation** — re-verify against the Weekly order sheet's own totals (the method above) before ever changing this again.
 
 ### Static Shim (index.html)
 - **Proxy handler must return `_proxy`**: `withSuccessHandler` and `withFailureHandler` MUST return `_proxy` (not `runner`). If they return `runner`, the next chained call fails with "not a function".

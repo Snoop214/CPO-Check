@@ -127,6 +127,24 @@ def _needs_field_backfill(path):
     except Exception:
         return True  # unreadable/corrupt — safest to recompute
 
+def _needs_week_window_fix(path):
+    """One-time migration: a cpo_weekly_*.json computed before 6 Oct 2026
+    used the WRONG 7 calendar days — it treated the week label as the LAST
+    day of the week instead of the FIRST (confirmed by cross-checking the
+    'Weekly order' sheet tab's totals against summed daily values — see
+    _period_date_range()'s docstring). Every such file has attendance/
+    holiday/OT numbers computed against an entirely different week than the
+    one its orders total actually covers. Bypass the freeze exactly once per
+    file to force a correct recompute, regardless of age — self-limiting,
+    because once a file carries 'weekAnchor':'start' it never triggers this
+    branch again."""
+    try:
+        with open(path) as f:
+            existing = json.load(f)
+        return existing.get('weekAnchor') != 'start'
+    except Exception:
+        return True  # unreadable/corrupt — safest to recompute
+
 # ── Helpers ──────────────────────────────────────────────────────
 # Known misspellings/variants in the ops attendance sheet that don't match
 # the vendor name spelling used in config/app_config.json's vendor_rates.
@@ -171,17 +189,26 @@ def _period_date_range(period, target_date, year, month):
     """Return (start,end) inclusive calendar-date strings that this period's
     single date label actually spans. Weekly/Monthly attendance data only
     gives one aggregate total per label (e.g. '2026-06-01' for the whole
-    month, or a week-ending date for a week) — so a literal `target_date ==
+    month, or a week-STARTING date for a week) — so a literal `target_date ==
     holiday_date` check almost never matches. This reconstructs the real
-    span so we can tell whether a holiday falls inside it."""
+    span so we can tell whether a holiday falls inside it.
+
+    IMPORTANT (fixed 6 Oct 2026): the 'Weekly order' sheet's date-row labels
+    are the FIRST day of that week, NOT the last — confirmed by summing daily
+    order values against the Weekly tab's totals for several store/week pairs
+    (e.g. store 717228 label '2026-09-27': daily Sep27+28+29 = 8+6+3 = 17,
+    exactly matching the Weekly column's 17 — the 'ending 2026-09-27'
+    reading would have summed Sep21-27 instead, giving 31, which matches
+    nothing). This was previously assumed backwards — see 'Critical Bugs
+    Fixed' in CLAUDE.md. Do not revert to a 'week ending' interpretation."""
     if period == 'monthly':
         last_day = calendar.monthrange(year, month)[1]
         return f'{year}-{month:02d}-01', f'{year}-{month:02d}-{last_day:02d}'
     if period == 'weekly':
-        # Sheet labels are "week ending" dates (see 'Scheduled End Time Week').
+        # Sheet labels are "week starting" dates.
         try:
-            end = datetime.strptime(str(target_date)[:10], '%Y-%m-%d').date()
-            start = end - timedelta(days=6)
+            start = datetime.strptime(str(target_date)[:10], '%Y-%m-%d').date()
+            end = start + timedelta(days=6)
             return start.isoformat(), end.isoformat()
         except (ValueError, TypeError):
             return target_date, target_date
@@ -421,16 +448,19 @@ def build_attend_struct(archived_by_date, date_labels, period):
     date_labels (the same date axis the orders sheet already uses):
       - period == 'mtd': each label is one calendar day; value is that day's
         present flag (0/1, capped — a person can't be >1 present on one day).
-      - period in ('weekly','monthly'): each label is a period-end/period-
-        start marker; value is the SUM of present-days across that whole
-        period (matches how the old Weekly/Monthly Know tabs pre-aggregated)."""
+      - period in ('weekly','monthly'): each label is a period-starting
+        marker; value is the SUM of present-days across that whole
+        period (matches how the old Weekly/Monthly Know tabs pre-aggregated).
+        Weekly labels are the FIRST day of the week, NOT the last — fixed
+        6 Oct 2026, see _period_date_range()'s docstring for the evidence.
+        Do not go back to treating the label as a week-ending date."""
     by_store = {}
     for i, label in enumerate(date_labels):
         if period == 'mtd':
             day_list = [label]
         elif period == 'weekly':
-            end = datetime.strptime(label[:10], '%Y-%m-%d').date()
-            day_list = [(end - timedelta(days=k)).isoformat() for k in range(6, -1, -1)]
+            start = datetime.strptime(label[:10], '%Y-%m-%d').date()
+            day_list = [(start + timedelta(days=k)).isoformat() for k in range(0, 7)]
         else:  # monthly
             y, m = int(label[:4]), int(label[5:7])
             last_day = calendar.monthrange(y, m)[1]
@@ -998,14 +1028,31 @@ def compute_cpo(period, date_index, orders, attend, master, cfg, is_mtd=False):
                 mtd_last_date = dl
                 break
 
+    week_label = ''
+    if period == 'weekly' and date_index < len(dates):
+        try:
+            wk_start = datetime.strptime(dates[date_index][:10], '%Y-%m-%d').date()
+            week_label = f'{wk_start.isoformat()} to {(wk_start + timedelta(days=6)).isoformat()}'
+        except ValueError:
+            week_label = dates[date_index]
+
     results.sort(key=lambda x: -x['orders'])
-    return {
+    out = {
         'period': period, 'dateIndex': date_index,
-        'dateLabel': f'MTD ({dates[0]} to {mtd_last_date})' if is_mtd else (dates[date_index] if date_index < len(dates) else ''),
+        'dateLabel': (f'MTD ({dates[0]} to {mtd_last_date})' if is_mtd
+                      else (week_label if period == 'weekly'
+                            else (dates[date_index] if date_index < len(dates) else ''))),
         'dates': dates, 'month': month, 'year': year,
         'workingDays': work_days, 'totalStores': len(results), 'data': results,
         'syncDate': mtd_last_date if is_mtd else None,
     }
+    if period == 'weekly':
+        # Marks this file as computed with the corrected week-STARTING label
+        # interpretation (fixed 6 Oct 2026). Used by main()'s one-time
+        # _needs_week_window_fix() migration to force a recompute of any
+        # weekly file written before this fix, regardless of freeze age.
+        out['weekAnchor'] = 'start'
+    return out
 
 # ── Main ─────────────────────────────────────────────────────────
 def main():
@@ -1071,7 +1118,10 @@ def main():
     print(f'  {computed} computed, {frozen} already-settled days left untouched')
 
     # 5. Compute all weekly dates (frozen once 10 complete weeks — 70 days —
-    #    past the week-ending date)
+    #    past the week's end). Week labels are the week's FIRST day (fixed
+    #    6 Oct 2026 — see _period_date_range()'s docstring), so the real end
+    #    of the week for freeze purposes is label + 6 days, not the label
+    #    itself.
     dates_weekly = raw['weekly']['orders'].get('dates', [])
     print(f'Computing {len(dates_weekly)} weekly dates...')
     computed, frozen = 0, 0
@@ -1079,10 +1129,11 @@ def main():
         fname = f'cpo_weekly_{dl[:10]}.json'
         full_path = os.path.join(DATA_DIR, fname)
         try:
-            end_date = datetime.strptime(dl[:10], '%Y-%m-%d').date()
+            end_date = datetime.strptime(dl[:10], '%Y-%m-%d').date() + timedelta(days=6)
         except ValueError:
             end_date = None
-        if end_date and _output_period_frozen(fname, end_date, 'weekly') and not _needs_field_backfill(full_path):
+        if (end_date and _output_period_frozen(fname, end_date, 'weekly')
+                and not _needs_field_backfill(full_path) and not _needs_week_window_fix(full_path)):
             frozen += 1
             continue
         r = compute_cpo('weekly', i, raw['weekly']['orders'], raw['weekly']['attend'], master, cfg, is_mtd=False)
