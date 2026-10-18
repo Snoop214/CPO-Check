@@ -557,6 +557,14 @@ to order share, never a flat 50/50 — see `compute_cpo()`'s Project Berry block
   City, Talabat Orders, Instashop Orders, Total Orders, Total Picker Cost,
   Talabat Share, Instashop Share, with a totals row. Only rows with
   `projectBerryOrders > 0` for the selected period are shown. CSV export.
+- **Dashboard tab indicator** (added 18 Oct 2026): any store row where
+  `projectBerryOrders > 0` for the selected period gets a green seedling
+  icon (`fa-seedling`) next to its store name, tooltip showing the
+  Instashop order count + AED charged to Instashop for that period. This
+  is a pure visual flag — it does not change `pickerCost`, which already
+  shows Talabat's share only (see split formula above). Added in
+  `renderDashboard()`'s row-building loop, right before the existing
+  `missingAtt` warning icon.
 - **Deliberately not implemented in Code.gs/Dashboard.html** — GAS is not
   the live deployment (see Architecture above) and has no equivalent sheet
   read, so adding the UI there without the backend would just show an

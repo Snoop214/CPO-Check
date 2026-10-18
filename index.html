@@ -793,8 +793,10 @@ function renderDashboard(){
       :'';
     var missingAtt=r.orders>0&&r.pickerCount===0
       ?'<span title="Missing attendance data" style="color:var(--warning);margin-left:4px"><i class="fas fa-exclamation-triangle"></i></span>':'' ;
+    var berryIcon=(r.projectBerryOrders>0)
+      ?'<span title="Project Berry store — '+fmt(r.projectBerryOrders)+' Instashop orders this period ('+_getCurrency()+' '+fmt(Math.round(r.projectBerryCost||0))+' charged to Instashop). Picker Cost shown here is Talabat\'s share only." style="color:#16a34a;margin-left:6px"><i class="fas fa-seedling"></i></span>':'';
     html+='<tr class="store-row" onclick="togglePickerRow(this)" style="cursor:pointer'+(rowStyle?';'+rowStyle:'')+'">';
-    html+='<td><i class="fas fa-chevron-right toggle-caret" style="margin-right:6px;font-size:10px;color:var(--muted)"></i>'+flag+r.vendorId+'</td><td>'+r.storeName+missingAtt+'</td><td>'+r.chain+'</td><td>'+r.city+'</td>';
+    html+='<td><i class="fas fa-chevron-right toggle-caret" style="margin-right:6px;font-size:10px;color:var(--muted)"></i>'+flag+r.vendorId+'</td><td>'+r.storeName+berryIcon+missingAtt+'</td><td>'+r.chain+'</td><td>'+r.city+'</td>';
     html+='<td>'+r.dept3pl+'</td><td>'+r.supervisor+'</td><td>'+r.champion+'</td>';
     var ri=r.relieverInfo||{};
     var permCount=ri.regularPickerCount>0?ri.regularPickerCount:(r.maxDailyPickers||r.pickerCount);
