@@ -555,8 +555,19 @@ to order share, never a flat 50/50 — see `compute_cpo()`'s Project Berry block
   `projectBerryConfig.enabled` is true. Period selector (Daily/Weekly/
   Monthly) identical to Payment Detail's. Table: Vendor ID, Store, Chain,
   City, Talabat Orders, Instashop Orders, Total Orders, Total Picker Cost,
-  Talabat Share, Instashop Share, with a totals row. Only rows with
+  Talabat Pays, Instashop Pays, with a totals row (added 18 Oct 2026:
+  grouped header row + light background tint distinguishes the "Orders"
+  columns from the "Picker Cost Split" columns, to resolve ambiguity about
+  which number belongs to which group). Only rows with
   `projectBerryOrders > 0` for the selected period are shown. CSV export.
+- **Period selector has 4 options** (added 18 Oct 2026): MTD (`mtdsum`
+  internally — the real month-to-date cumulative summary, reusing the
+  same pre-cached `APP.cache['mtd_-1_Picker']` / `data/cpo_mtd_summary.json`
+  the Dashboard's own MTD tab uses, no date picker shown), Daily (`mtd`
+  internally, a specific day within the month — same overloaded `mtd` key
+  Payment Detail already uses for "Daily"), Weekly, Monthly. Do not confuse
+  the `mtdsum` and `mtd` period keys — `mtd` + a real date index means
+  "one day", `mtdsum` means "the whole month so far".
 - **Dashboard tab indicator** (added 18 Oct 2026): any store row where
   `projectBerryOrders > 0` for the selected period gets a green seedling
   icon (`fa-seedling`) next to its store name, tooltip showing the
