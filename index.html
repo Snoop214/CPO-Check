@@ -122,6 +122,7 @@ tbody tr:hover{background:#f0ebe4}
       <button onclick="switchView('historical')"><i class="fas fa-history" style="margin-right:4px"></i>Historical &amp; Trends</button>
       <button onclick="switchView('optimizer')"><i class="fas fa-calculator" style="margin-right:4px"></i>Cost Optimizer</button>
       <button onclick="switchView('paymentdetail')"><i class="fas fa-money-check-alt" style="margin-right:4px"></i>Payment Detail</button>
+      <button onclick="switchView('projectberry')" id="projectBerryNavBtn" style="display:none"><i class="fas fa-seedling" style="margin-right:4px"></i>Project Berry</button>
       <button onclick="switchView('settings')" id="settingsNavBtn"><i class="fas fa-cog" style="margin-right:4px"></i>Settings</button>
       <button onclick="switchView('dataformat')"><i class="fas fa-table" style="margin-right:4px"></i>Data Format</button>
     </div>
@@ -213,6 +214,7 @@ if(typeof google==='undefined'||!google.script||window.location.hostname.indexOf
             working_days:   cfg.working_days||[],
           },
           optimizerConfig: cfg.optimizer||{},
+          projectBerryConfig: cfg.projectBerry||{enabled:false},
           ramadanConfig: cfg.ramadan||{start:'',end:''},
           holidays: cfg.holidays||[],
           user:     {email:userRec.email,role:userRec.role,name:userRec.name},
@@ -262,6 +264,7 @@ if(typeof google==='undefined'||!google.script||window.location.hostname.indexOf
     updateConfigEntry:function(section,id,fields){return _ghWriteConfig(function(cfg){var arr=(cfg[section]||[]).map(function(e){return e.id===id?Object.assign({},e,fields):e;});cfg[section]=arr;return arr;},'Update '+section);},
     deleteConfigEntry:function(section,id){return _ghWriteConfig(function(cfg){var arr=(cfg[section]||[]).filter(function(e){return e.id!==id;});cfg[section]=arr;return arr;},'Delete '+section);},
     saveOptimizerConfig:function(opt){return _ghWriteConfig(function(cfg){cfg.optimizer=opt;return opt;},'Update optimizer');},
+    saveProjectBerryConfig:function(pb){return _ghWriteConfig(function(cfg){cfg.projectBerry=pb;return pb;},'Update Project Berry');},
     saveRamadanConfig:function(ram){return _ghWriteConfig(function(cfg){cfg.ramadan=ram;return ram;},'Update Ramadan period');},
     addHolidayEntry:function(entry){return _ghWriteConfig(function(cfg){var arr=cfg.holidays||[];entry.id=Date.now().toString();arr.push(entry);cfg.holidays=arr;return arr;},'Add holiday');},
     deleteHolidayEntry:function(id){return _ghWriteConfig(function(cfg){var arr=(cfg.holidays||[]).filter(function(e){return e.id!==id;});cfg.holidays=arr;return arr;},'Delete holiday');},
@@ -434,6 +437,7 @@ var APP = {
   histLevel:'store',             // store / chain
   trendChart:null,
   optimizerConfig:{currency:'AED', actionThreshold:4.0, criticalThreshold:20.0},
+  projectBerryConfig:{enabled:false},
   _checklistOpen:true
 };
 
@@ -481,6 +485,9 @@ function onInitialData(r) {
   }
 
   if(r.optimizerConfig)APP.optimizerConfig=r.optimizerConfig;
+  APP.projectBerryConfig=r.projectBerryConfig||{enabled:false};
+  var _pbBtn=document.getElementById('projectBerryNavBtn');
+  if(_pbBtn)_pbBtn.style.display=APP.projectBerryConfig.enabled?'':'none';
   if(r.ramadanConfig)APP.ramadanConfig=r.ramadanConfig;
   if(r.holidays)APP.holidays=r.holidays;
   if(r.hourlyData)APP.hourlyData=r.hourlyData;
@@ -1070,6 +1077,142 @@ function pdExportCSV(){
   var a=document.createElement('a');
   a.href=URL.createObjectURL(new Blob([csv],{type:'text/csv'}));
   a.download='PaymentDetail_'+(APP.pd.period||'')+'_'+(APP.pd.dateLabel||'').replace(/[^a-zA-Z0-9]/g,'_')+'.csv';
+  a.click();
+}
+
+// ================================================================
+// PROJECT BERRY — Talabat/Instashop picker-cost sharing at overlap stores
+// ================================================================
+function renderProjectBerry(){
+  var html='<div class="content">';
+  if(!APP.projectBerryConfig||!APP.projectBerryConfig.enabled){
+    html+='<div class="empty-state"><i class="fas fa-seedling" style="font-size:36px;display:block;margin-bottom:10px;opacity:.3"></i>'
+      +'<p>Project Berry is currently off.</p>'
+      +'<p style="font-size:12px;margin-top:6px">Turn it on in <strong>Settings → Project Berry</strong> to split picker cost with Instashop at overlapping stores.</p></div>';
+    document.getElementById('mainContent').innerHTML=html+'</div>';
+    return;
+  }
+  if(!APP.pbr)APP.pbr={period:'mtd',dateIdx:null,rows:[],loaded:false,dateLabel:''};
+  var pbr=APP.pbr;
+  html+='<div style="background:var(--cream);border-radius:var(--radius);padding:16px;margin-bottom:16px;display:flex;flex-wrap:wrap;gap:14px;align-items:flex-end">';
+  html+='<div><div style="font-size:10px;font-weight:600;color:var(--muted);text-transform:uppercase;margin-bottom:4px">Period</div>';
+  html+='<div class="period-toggle" id="pbrPeriodToggle">';
+  [['mtd','Daily'],['weekly','Weekly'],['monthly','Monthly']].forEach(function(pair){
+    html+='<button data-p="'+pair[0]+'" class="'+(pbr.period===pair[0]?'active':'')+'" onclick="pbrSetPeriod(\''+pair[0]+'\')">'+pair[1]+'</button>';
+  });
+  html+='</div></div>';
+  html+='<div class="fg"><label>Select</label><select id="pbrDatePicker" style="background-image:none;padding-right:8px"></select>';
+  html+='<button class="btn btn-primary btn-sm" onclick="pbrCompute()" style="white-space:nowrap;margin-left:6px"><i class="fas fa-play"></i> Compute</button></div>';
+  html+='</div>';
+  html+='<div id="pbrTableArea"><div class="empty-state"><i class="fas fa-seedling" style="font-size:36px;display:block;margin-bottom:10px;opacity:.3"></i><p>Select a period/date and click <strong>Compute</strong> to load the Talabat/Instashop cost split.</p></div></div>';
+  html+='</div>';
+  document.getElementById('mainContent').innerHTML=html;
+  pbrPopulateDatePicker(pbr.period);
+  if(pbr.loaded)pbrRenderTable();
+}
+function pbrSetPeriod(period){
+  APP.pbr.period=period;
+  APP.pbr.loaded=false;
+  document.querySelectorAll('#pbrPeriodToggle button').forEach(function(b){b.classList.toggle('active',b.dataset.p===period);});
+  pbrPopulateDatePicker(period);
+  var area=document.getElementById('pbrTableArea');
+  if(area)area.innerHTML='<div class="empty-state"><i class="fas fa-seedling" style="font-size:36px;display:block;margin-bottom:10px;opacity:.3"></i><p>Select a date and click <strong>Compute</strong> to load the Talabat/Instashop cost split.</p></div>';
+}
+function pbrPopulateDatePicker(period){
+  var dates=APP.periodsData[period]?APP.periodsData[period].orderDates||[]:[];
+  var sel=document.getElementById('pbrDatePicker');
+  if(!sel)return;
+  sel.innerHTML='';
+  for(var i=0;i<dates.length;i++){
+    var opt=document.createElement('option');
+    opt.value=i;
+    var lbl=dates[i]; if(lbl.length>=10)lbl=lbl.substring(0,10);
+    opt.textContent=lbl;
+    sel.appendChild(opt);
+  }
+  if(dates.length>0){
+    var lastIdx=dates.length-1;
+    sel.value=lastIdx;
+    APP.pbr.dateIdx=lastIdx;
+  }
+}
+function pbrCompute(){
+  var pbr=APP.pbr;
+  var sel=document.getElementById('pbrDatePicker');
+  if(!sel)return;
+  pbr.dateIdx=parseInt(sel.value,10);
+  if(isNaN(pbr.dateIdx))return;
+  if(!APP.cache)APP.cache={};
+  var cacheKey='projectberry_'+pbr.period+'_'+pbr.dateIdx;
+  var cached=APP.cache[cacheKey];
+  if(cached){pbrOnData(cached);return;}
+  var area=document.getElementById('pbrTableArea');
+  if(area)area.innerHTML='<div class="loading"><div class="spinner"></div><div style="font-size:13px;color:var(--muted)">Loading Project Berry split...</div></div>';
+  google.script.run.withSuccessHandler(function(r){
+    if(!r.error)APP.cache[cacheKey]=r;
+    pbrOnData(r);
+  }).withFailureHandler(function(e){
+    if(area)area.innerHTML='<div class="empty-state">'+(e.message||'Failed to load')+'</div>';
+  }).getCPOData(pbr.period,pbr.dateIdx,['Picker']);
+}
+function pbrOnData(r){
+  var area=document.getElementById('pbrTableArea');
+  if(r.error){if(area)area.innerHTML='<div class="empty-state">'+r.error+'</div>';return;}
+  var rows=[];
+  (r.data||[]).forEach(function(store){
+    var instaOrders=store.projectBerryOrders||0;
+    if(instaOrders<=0)return; // only overlap stores with actual Instashop volume this period
+    var talabatOrders=store.orders||0;
+    rows.push({
+      vendorId: store.vendorId, storeName: store.storeName, chain: store.chain, city: store.city,
+      talabatOrders: talabatOrders, instashopOrders: instaOrders, totalOrders: talabatOrders+instaOrders,
+      totalPickerCostAllOrders: store.totalPickerCostAllOrders||0,
+      talabatCost: store.pickerCost||0, instashopCost: store.projectBerryCost||0,
+    });
+  });
+  APP.pbr.rows=rows;
+  APP.pbr.dateLabel=r.dateLabel||'';
+  APP.pbr.loaded=true;
+  pbrRenderTable();
+}
+function pbrRenderTable(){
+  var area=document.getElementById('pbrTableArea');
+  if(!area)return;
+  var rows=APP.pbr.rows||[];
+  if(!rows.length){
+    area.innerHTML='<div class="empty-state"><i class="fas fa-seedling" style="font-size:36px;display:block;margin-bottom:10px;opacity:.3"></i><p>No Project Berry overlap stores had Instashop orders for this period.</p></div>';
+    return;
+  }
+  var cur=_getCurrency();
+  var totTalabatO=0,totInstaO=0,totCost=0,totTalabatC=0,totInstaC=0;
+  var h='<div style="margin-bottom:8px;font-size:12px;color:var(--muted)"><i class="fas fa-calendar-alt" style="margin-right:4px"></i>'+(APP.pbr.dateLabel||'')+'</div>';
+  h+='<div style="display:flex;justify-content:flex-end;margin-bottom:8px"><button class="btn btn-sm btn-outline" onclick="pbrExportCSV()"><i class="fas fa-download" style="margin-right:4px"></i>Export CSV</button></div>';
+  h+='<div style="overflow-x:auto"><table class="data-table"><thead><tr>';
+  ['Vendor ID','Store','Chain','City','Talabat Orders','Instashop Orders','Total Orders','Total Picker Cost','Talabat Share','Instashop Share'].forEach(function(c){h+='<th>'+c+'</th>';});
+  h+='</tr></thead><tbody>';
+  rows.forEach(function(r){
+    totTalabatO+=r.talabatOrders; totInstaO+=r.instashopOrders; totCost+=r.totalPickerCostAllOrders;
+    totTalabatC+=r.talabatCost; totInstaC+=r.instashopCost;
+    h+='<tr><td>'+r.vendorId+'</td><td>'+r.storeName+'</td><td>'+r.chain+'</td><td>'+r.city+'</td>'
+      +'<td>'+fmt(r.talabatOrders)+'</td><td>'+fmt(r.instashopOrders)+'</td><td>'+fmt(r.totalOrders)+'</td>'
+      +'<td>'+cur+' '+fmt(r.totalPickerCostAllOrders)+'</td>'
+      +'<td>'+cur+' '+fmt(r.talabatCost)+'</td><td>'+cur+' '+fmt(r.instashopCost)+'</td></tr>';
+  });
+  h+='<tr style="font-weight:700;background:var(--cream)"><td colspan="4">Total ('+rows.length+' stores)</td>'
+    +'<td>'+fmt(totTalabatO)+'</td><td>'+fmt(totInstaO)+'</td><td>'+fmt(totTalabatO+totInstaO)+'</td>'
+    +'<td>'+cur+' '+fmt(totCost)+'</td><td>'+cur+' '+fmt(totTalabatC)+'</td><td>'+cur+' '+fmt(totInstaC)+'</td></tr>';
+  h+='</tbody></table></div>';
+  area.innerHTML=h;
+}
+function pbrExportCSV(){
+  var rows=APP.pbr.rows||[];
+  var cols=['vendorId','storeName','chain','city','talabatOrders','instashopOrders','totalOrders','totalPickerCostAllOrders','talabatCost','instashopCost'];
+  var hdrs=['Vendor ID','Store','Chain','City','Talabat Orders','Instashop Orders','Total Orders','Total Picker Cost','Talabat Share','Instashop Share'];
+  var csv=hdrs.join(',')+'\n';
+  rows.forEach(function(r){csv+=cols.map(function(c){var v=r[c];return typeof v==='string'?'"'+v.replace(/"/g,'""')+'"':(v!=null?v:0);}).join(',')+'\n';});
+  var a=document.createElement('a');
+  a.href=URL.createObjectURL(new Blob([csv],{type:'text/csv'}));
+  a.download='ProjectBerry_'+(APP.pbr.period||'')+'_'+(APP.pbr.dateLabel||'').replace(/[^a-zA-Z0-9]/g,'_')+'.csv';
   a.click();
 }
 
@@ -2659,6 +2802,7 @@ function switchView(view){
   }
   else if(view==='optimizer'){renderOptimizerView();}
   else if(view==='paymentdetail'){renderPaymentDetail();}
+  else if(view==='projectberry'){renderProjectBerry();}
   else if(view==='settings'){renderSettings();}
   else if(view==='dataformat'){renderDataFormat();}
 }
@@ -2675,6 +2819,7 @@ function renderSettings(){
     {k:'optimizer',i:'fa-sliders-h',l:'Optimizer'}
   ];
   if(isAdmin){
+    tabs.push({k:'projectberry',i:'fa-seedling',l:'Project Berry'});
     tabs.push({k:'fetchall',i:'fa-database',l:'Fetch All Data'});
     tabs.push({k:'users',i:'fa-user-shield',l:'User Access'});
     tabs.push({k:'emails',i:'fa-envelope',l:'Email Reports'});
@@ -2699,6 +2844,7 @@ function renderSettingsTab(tab){
   else if(tab==='employees')c.innerHTML=renderEmployeesTab();
   else if(tab==='workdays'){c.innerHTML=renderWorkdaysTab();setTimeout(onHlCountryChange,0);}
   else if(tab==='optimizer')c.innerHTML=renderOptimizerTab();
+  else if(tab==='projectberry')c.innerHTML=renderProjectBerryTab();
   else if(tab==='fetchall')c.innerHTML=renderFetchAllTab();
   else if(tab==='users')c.innerHTML=renderUsersTab();
   else if(tab==='emails')c.innerHTML=renderEmailsTab();
@@ -3206,6 +3352,33 @@ function saveOptimizerSettings(){
     showToast('Optimizer settings saved','success');
   }).withFailureHandler(function(e){showToast('Save failed: '+e.message,'error');})
   .saveOptimizerConfig(cfg);
+}
+
+function renderProjectBerryTab(){
+  if((APP.user.role||'').toLowerCase()!=='admin')return'<p style="color:var(--muted)">Admins only.</p>';
+  var pb=APP.projectBerryConfig||{enabled:false};
+  var h='<div class="s-title"><i class="fas fa-seedling" style="color:var(--primary);margin-right:7px"></i>Project Berry</div>';
+  h+='<p style="font-size:12px;color:var(--muted);margin-bottom:16px">Talabat and Instashop share the same pickers at a handful of overlapping stores (same chain, both companies, separate management). When enabled, those stores\' picker cost is split between Talabat and Instashop in proportion to each side\'s order volume for the period — e.g. 100 Talabat + 100 Instashop orders on a AED 4,000 total picker cost splits 50/50 (AED 2,000 each); 150 + 50 splits AED 3,000 / AED 1,000. Only stores explicitly listed in the Mapping tab of the Instashop order sheet are affected — everything else is unchanged. Talabat\'s own Orders/CPO figures only ever reflect Talabat\'s share; Instashop\'s share is shown separately under the Project Berry tab.</p>';
+  h+='<div style="display:flex;align-items:center;justify-content:space-between;padding:10px 0;border-bottom:1px solid var(--border);margin-bottom:16px">';
+  h+='<div><span style="font-size:13px;font-weight:600;color:var(--text)">Enable Project Berry cost-sharing</span>';
+  h+='<div style="font-size:10px;color:var(--muted);margin-top:1px">Off by default. When off, picker cost is never split — today\'s exact numbers.</div></div>';
+  h+='<label style="position:relative;display:inline-block;width:42px;height:24px">';
+  h+='<input id="pbEnabled" type="checkbox" '+(pb.enabled?'checked':'')+' style="opacity:0;width:0;height:0">';
+  h+='<span onclick="var cb=document.getElementById(\'pbEnabled\');cb.checked=!cb.checked;this.style.background=cb.checked?\'var(--primary)\':\'#ccc\';this.firstElementChild.style.transform=cb.checked?\'translateX(18px)\':\'translateX(0)\';" style="position:absolute;cursor:pointer;top:0;left:0;right:0;bottom:0;background:'+(pb.enabled?'var(--primary)':'#ccc')+';border-radius:24px;transition:.2s">';
+  h+='<span style="position:absolute;height:18px;width:18px;left:3px;bottom:3px;background:#fff;border-radius:50%;transition:.2s;transform:'+(pb.enabled?'translateX(18px)':'translateX(0)')+'"></span>';
+  h+='</span></label></div>';
+  h+='<button class="btn btn-primary" onclick="saveProjectBerrySettings()"><i class="fas fa-save" style="margin-right:5px"></i>Save</button>';
+  return h;
+}
+function saveProjectBerrySettings(){
+  var pb={enabled:!!document.getElementById('pbEnabled').checked};
+  google.script.run.withSuccessHandler(function(){
+    APP.projectBerryConfig=pb;
+    var btn=document.getElementById('projectBerryNavBtn');
+    if(btn)btn.style.display=pb.enabled?'':'none';
+    showToast('Project Berry settings saved — numbers will reflect it on the next data refresh','success');
+  }).withFailureHandler(function(e){showToast('Save failed: '+e.message,'error');})
+  .saveProjectBerryConfig(pb);
 }
 
 function renderEmployeesTab(){

@@ -16,12 +16,17 @@ SHEET_IDS = {
     'attendance_log': '1_6EI-J9_QRTo1HHl1nUoHRzo8vXZnPUQYRLBk5m0grg',  # "Daily Attendance" — flat per-shift log, replaces the 3 Know tabs above
     'master':         '10swg2HotxTSmIMPGQt6AxARFQyfTbvt7504tFjysmGs',
     'hourly':         '1n4GopL6gSsSw_sauMkHKVfcF6IDYI84skyGMdfC4hqA',
+    'instashop':      '1WTecUt79mFuWctO29bG8sXTNW8uBMod91UkiIjLz0Zs',  # "Project Berry" — Instashop's own order sheet (added 18 Oct 2026)
 }
 # Sheet tabs for hourly/timing sheet:
 # Sheet1 = Hourly GMV (Chain ID, Chain Name, Vendor ID, Vendor Name, then cols 0-23 = GMV per hour)
 # Sheet2 = Hourly Orders (Chain ID, Chain Name, Vendor ID, Vendor Name, then cols 0-23 = avg daily orders per hour)
 # Sheet3 = Store timing (Vendor ID, Vendor Name, Day of Week, Schedule End, Schedule Start, Shift Hours)
 ORDER_TABS  = {'mtd': 'MTD Order',  'weekly': 'Weekly order',  'monthly': 'Monthly order'}
+# Instashop's own order tabs — same column layout as ORDER_TABS above (Chain Id,
+# Chain Name, Vendor Id, Vendor Name, then one 'Successful Orders' column per
+# date label), just a separate workbook with Instashop's own vendor IDs.
+INSTA_ORDER_TABS = {'mtd': 'Insta daily', 'weekly': 'Insta Weekly', 'monthly': 'Insta Monthly'}
 
 DATA_DIR   = os.path.join(os.path.dirname(__file__), '..', 'data')
 CONFIG_DIR = os.path.join(os.path.dirname(__file__), '..', 'config')
@@ -114,7 +119,7 @@ def _output_period_frozen(filename, end_date, period_type):
 # field it never triggers this branch again, and it never touches `cost` or
 # any other already-computed number — only adds fields that were previously
 # absent, using the same historical inputs as the original computation.
-REQUIRED_STORE_FIELDS = ('holOtDays', 'holOtCost')
+REQUIRED_STORE_FIELDS = ('holOtDays', 'holOtCost', 'projectBerryCost')
 
 def _needs_field_backfill(path):
     try:
@@ -272,10 +277,17 @@ def extract_dates(data, date_row, start_col):
             dates.append((c, s))
     return dates
 
-def read_order_data(gc, period):
-    print(f'  reading orders {period}...')
-    sh = gc.open_by_key(SHEET_IDS['orders'])
-    ws = sh.worksheet(ORDER_TABS[period])
+def read_order_data(gc, period, sheet_id=None, tab_map=None, label='orders'):
+    """Read one period's order tab. Defaults to the Talabat Orders sheet;
+    pass sheet_id/tab_map to read an identically-laid-out sheet instead (used
+    for the Instashop/Project Berry order sheet, which shares the exact same
+    column layout: Chain Id, Chain Name, Vendor Id, Vendor Name, then one
+    'Successful Orders' column per date label)."""
+    sheet_id = sheet_id or SHEET_IDS['orders']
+    tab_map = tab_map or ORDER_TABS
+    print(f'  reading {label} {period}...')
+    sh = gc.open_by_key(sheet_id)
+    ws = sh.worksheet(tab_map[period])
     data = ws.get_all_values()
     if len(data) < 3: return {'dates': [], 'stores': {}}
 
@@ -306,6 +318,43 @@ def read_order_data(gc, period):
             'values':    values,
         }
     return {'dates': [d for _, d in dates], 'stores': stores}
+
+def read_instashop_mapping(gc):
+    """Read the 'Mapping' tab of the Instashop order sheet: Instashop ID ->
+    Talabat Vendor ID. Only vendors listed here are 'Project Berry' overlap
+    stores — any Instashop store NOT in this mapping is a pure-Instashop
+    location with no Talabat picker involved, and must be ignored entirely."""
+    print('  reading Instashop vendor mapping...')
+    sh = gc.open_by_key(SHEET_IDS['instashop'])
+    ws = sh.worksheet('Mapping')
+    data = ws.get_all_values()
+    if len(data) < 2:
+        return {}
+    headers = data[0]
+    c_insta = find_col(headers, ['instashop id'])
+    c_vid   = find_col(headers, ['vendor id'])
+    mapping = {}
+    for row in data[1:]:
+        insta_id = str(row[c_insta]).strip() if c_insta >= 0 and c_insta < len(row) else ''
+        vid      = str(row[c_vid]).strip()   if c_vid   >= 0 and c_vid   < len(row) else ''
+        if insta_id and vid:
+            mapping[insta_id] = vid
+    print(f'    {len(mapping)} mapped overlap stores')
+    return mapping
+
+def remap_instashop_orders(raw, mapping):
+    """Re-key an Instashop orders {'dates','stores'} structure (stores keyed
+    by Instashop's own alphanumeric Vendor Id) onto Talabat Vendor IDs, using
+    the Mapping tab — dropping every unmapped Instashop store along the way.
+    The result is directly comparable, date-label-for-date-label, to the
+    Talabat orders structure for the same period."""
+    stores = {}
+    for insta_id, store in raw.get('stores', {}).items():
+        tvid = mapping.get(insta_id)
+        if not tvid:
+            continue  # not an overlap store — ignore entirely, per design
+        stores[tvid] = store
+    return {'dates': raw.get('dates', []), 'stores': stores}
 
 def read_daily_attendance_log(gc):
     """Read the flat 'Daily Attendance' shift-log sheet — one row per employee
@@ -694,10 +743,19 @@ def read_hourly_data(gc):
         return {'orders': {}, 'gmv': {}, 'timing': {}}
 
 # ── CPO Engine ───────────────────────────────────────────────────
-def compute_cpo(period, date_index, orders, attend, master, cfg, is_mtd=False):
+def compute_cpo(period, date_index, orders, attend, master, cfg, is_mtd=False, instashop_orders=None):
     dates      = orders.get('dates', [])
     attend_dates = attend.get('dates', [])
     if not dates: return {'error': 'No dates'}
+
+    # Project Berry (Instashop cost-sharing) — config-gated. instashop_orders,
+    # when provided, is already re-keyed onto Talabat Vendor IDs and limited
+    # to mapped overlap stores only (see remap_instashop_orders()). Disabled
+    # by default; toggled in Settings -> config/app_config.json 'projectBerry'.
+    project_berry_on = bool(cfg.get('projectBerry', {}).get('enabled', False))
+    instashop_stores = (instashop_orders or {}).get('stores', {}) if project_berry_on else {}
+    instashop_dates  = (instashop_orders or {}).get('dates', []) if project_berry_on else []
+    instashop_date_map = {d: i for i, d in enumerate(instashop_dates)}
 
     ref_date = dates[0] if is_mtd else (dates[date_index] if date_index < len(dates) else dates[0])
     dp = ref_date[:7].split('-')
@@ -785,6 +843,28 @@ def compute_cpo(period, date_index, orders, attend, master, cfg, is_mtd=False):
                 total_orders = sum(so['values'][di] for di, dl in enumerate(dates) if dl in valid_date_set and di < len(so['values']))
             elif date_index < len(so.get('values', [])):
                 total_orders = so['values'][date_index]
+
+        # Project Berry: this store's Instashop order volume for the same
+        # period (0 if not a mapped overlap store, or feature disabled).
+        # Looked up by date LABEL (not position) since the Instashop sheet's
+        # own date columns aren't guaranteed to align positionally with the
+        # Talabat orders sheet's.
+        instashop_order_count = 0
+        ib = instashop_stores.get(vendor_id)
+        if ib:
+            ib_values = ib.get('values', [])
+            if is_mtd:
+                for dl in dates:
+                    if dl not in valid_date_set:
+                        continue
+                    ii = instashop_date_map.get(dl)
+                    if ii is not None and ii < len(ib_values):
+                        instashop_order_count += ib_values[ii]
+            else:
+                target_date = dates[date_index] if date_index < len(dates) else None
+                ii = instashop_date_map.get(target_date)
+                if ii is not None and ii < len(ib_values):
+                    instashop_order_count = ib_values[ii]
 
         picker_cost = 0
         picker_count = 0
@@ -950,6 +1030,28 @@ def compute_cpo(period, date_index, orders, attend, master, cfg, is_mtd=False):
         elif not is_mtd:
             max_daily_pickers = picker_count
 
+        # Project Berry: split this store's total picker cost between Talabat
+        # and Instashop, proportional to each side's order share for this
+        # period — e.g. 2 pickers at AED 2,000 each (AED 4,000 total), 100
+        # Talabat orders + 100 Instashop orders this month -> CPO = 4000/200
+        # = AED 20/order -> AED 2,000 to each side. Only applies when this
+        # store is a mapped overlap store with actual Instashop volume this
+        # period (instashop_order_count > 0); otherwise unaffected, so
+        # disabling Project Berry (or an unmapped store) reproduces today's
+        # exact numbers. Everything above (attendance, OT, deduction, floor)
+        # is computed on the picker's full attendance record regardless —
+        # only the resulting total dollar figure is reallocated here.
+        total_picker_cost_all = picker_cost
+        project_berry_orders = 0
+        project_berry_cost = 0
+        if instashop_order_count > 0:
+            combined_orders = total_orders + instashop_order_count
+            if combined_orders > 0:
+                talabat_share = total_orders / combined_orders
+                project_berry_orders = instashop_order_count
+                project_berry_cost = total_picker_cost_all * (1 - talabat_share)
+                picker_cost = total_picker_cost_all * talabat_share
+
         # Reliever detection
         max_picker_days = max((p['days'] for p in picker_days_list), default=0)
         period_days_rel = max_picker_days if max_picker_days > 0 else work_days
@@ -1000,6 +1102,9 @@ def compute_cpo(period, date_index, orders, attend, master, cfg, is_mtd=False):
                 'otCost': round(total_ot_cost),
                 'holOtDays': round(total_hol_ot_days, 2),
                 'holOtCost': round(total_hol_ot_cost),
+                'projectBerryOrders': round(project_berry_orders, 1),
+                'projectBerryCost': round(project_berry_cost),
+                'totalPickerCostAllOrders': round(total_picker_cost_all),
                 'relieverInfo': reliever_info,
                 'byVendor': {v: {'cost': round(d['cost']), 'pickerCount': d['pickerCount'],
                                   'presentDays': round(d['presentDays'], 2)}
@@ -1067,6 +1172,30 @@ def main():
     for period in ('mtd', 'weekly', 'monthly'):
         raw[period] = {'orders': read_order_data(gc, period)}
 
+    # Project Berry (Instashop cost-sharing) — config-gated, added 18 Oct 2026.
+    # Reads a separate Google Sheet (Instashop's own order tabs + a Mapping
+    # tab of Instashop ID -> Talabat Vendor ID) and re-keys it onto Talabat
+    # Vendor IDs, dropping any Instashop store with no mapping. Wrapped in
+    # try/except so a sheet-sharing hiccup or API error never takes down the
+    # whole run — Project Berry numbers just come back empty for that run.
+    project_berry_on = bool(cfg.get('projectBerry', {}).get('enabled', False))
+    if project_berry_on:
+        try:
+            print('  reading Instashop (Project Berry) data...')
+            insta_mapping = read_instashop_mapping(gc)
+            for period in ('mtd', 'weekly', 'monthly'):
+                insta_raw = read_order_data(gc, period, sheet_id=SHEET_IDS['instashop'],
+                                             tab_map=INSTA_ORDER_TABS, label='Instashop orders')
+                raw[period]['instashop'] = remap_instashop_orders(insta_raw, insta_mapping)
+        except Exception as e:
+            print(f'  warning: Project Berry data failed — {e}')
+            import traceback; traceback.print_exc()
+            for period in ('mtd', 'weekly', 'monthly'):
+                raw[period]['instashop'] = {'dates': [], 'stores': {}}
+    else:
+        for period in ('mtd', 'weekly', 'monthly'):
+            raw[period]['instashop'] = None
+
     # Attendance: one flat shift-log sheet + a permanent per-day archive,
     # instead of the old MTD/Weekly/Monthly Know pivot tabs. The live sheet
     # only needs to hold a rolling window (~40-50 days) — everything older
@@ -1088,13 +1217,16 @@ def main():
     for period in ('mtd', 'weekly', 'monthly'):
         save_json(f'raw_orders_{period}.json', raw[period]['orders'])
         save_json(f'raw_attend_{period}.json', raw[period]['attend'])
+        if raw[period].get('instashop'):
+            save_json(f'raw_instashop_{period}.json', raw[period]['instashop'])
     save_json('hourly.json',     hourly_data['orders'])
     save_json('hourly_gmv.json', hourly_data['gmv'])
     save_json('timing.json',     hourly_data['timing'])
 
     # 3. Compute MTD summary
     print('Computing MTD...')
-    mtd_result = compute_cpo('mtd', -1, raw['mtd']['orders'], raw['mtd']['attend'], master, cfg, is_mtd=True)
+    mtd_result = compute_cpo('mtd', -1, raw['mtd']['orders'], raw['mtd']['attend'], master, cfg, is_mtd=True,
+                              instashop_orders=raw['mtd'].get('instashop'))
     save_json('cpo_mtd_summary.json', mtd_result)
 
     # 4. Compute all daily dates (skip ones already settled — see
@@ -1112,7 +1244,8 @@ def main():
         if end_date and _output_period_frozen(fname, end_date, 'daily') and not _needs_field_backfill(full_path):
             frozen += 1
             continue
-        r = compute_cpo('mtd', i, raw['mtd']['orders'], raw['mtd']['attend'], master, cfg, is_mtd=False)
+        r = compute_cpo('mtd', i, raw['mtd']['orders'], raw['mtd']['attend'], master, cfg, is_mtd=False,
+                         instashop_orders=raw['mtd'].get('instashop'))
         save_json(fname, r)
         computed += 1
     print(f'  {computed} computed, {frozen} already-settled days left untouched')
@@ -1136,7 +1269,8 @@ def main():
                 and not _needs_field_backfill(full_path) and not _needs_week_window_fix(full_path)):
             frozen += 1
             continue
-        r = compute_cpo('weekly', i, raw['weekly']['orders'], raw['weekly']['attend'], master, cfg, is_mtd=False)
+        r = compute_cpo('weekly', i, raw['weekly']['orders'], raw['weekly']['attend'], master, cfg, is_mtd=False,
+                         instashop_orders=raw['weekly'].get('instashop'))
         save_json(fname, r)
         computed += 1
     print(f'  {computed} computed, {frozen} already-settled weeks left untouched')
@@ -1157,7 +1291,8 @@ def main():
         if end_date and _output_period_frozen(fname, end_date, 'monthly') and not _needs_field_backfill(full_path):
             frozen += 1
             continue
-        r = compute_cpo('monthly', i, raw['monthly']['orders'], raw['monthly']['attend'], master, cfg, is_mtd=False)
+        r = compute_cpo('monthly', i, raw['monthly']['orders'], raw['monthly']['attend'], master, cfg, is_mtd=False,
+                         instashop_orders=raw['monthly'].get('instashop'))
         save_json(fname, r)
         computed += 1
     print(f'  {computed} computed, {frozen} already-settled months left untouched')

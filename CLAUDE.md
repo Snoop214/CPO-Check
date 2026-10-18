@@ -1,9 +1,10 @@
 # CPO (Cost Per Order) — talabat LS
-# Last Updated: 6 October 2026
+# Last Updated: 18 October 2026
 
 ## What This App Does
 Store-level Cost Per Order (CPO) + Picker Utilization Rate (UTR) tracking.
-Data comes from 2 Google Sheets (Orders + Attendance).
+Data comes from 2 Google Sheets (Orders + Attendance), plus a 3rd sheet for
+Project Berry (Instashop cost-sharing — see dedicated section below).
 Also includes a Cost Optimizer tab that evaluates cost-reduction options per store.
 
 ---
@@ -48,6 +49,7 @@ Also includes a Cost Optimizer tab that evaluates cost-reduction options per sto
 - Attendance (legacy, no longer read): `1LRlCJbv7nnabo_doQ2VAP4jMl80fF-ZpLcsqIE6FO9w`
 - **Attendance log (current source)**: `1_6EI-J9_QRTo1HHl1nUoHRzo8vXZnPUQYRLBk5m0grg` — "Daily Attendance", must be shared Viewer with `cpo-dashboard@sales-details-2025.iam.gserviceaccount.com`
 - Master Data: `10swg2HotxTSmIMPGQt6AxARFQyfTbvt7504tFjysmGs`
+- **Instashop / Project Berry order sheet**: `1WTecUt79mFuWctO29bG8sXTNW8uBMod91UkiIjLz0Zs` — "Instashop - Master Order", must be shared Viewer with `cpo-dashboard@sales-details-2025.iam.gserviceaccount.com`. See "Project Berry" section below.
 
 ## Sheet Tabs
 - Orders: `MTD Order`, `Weekly Order`, `Monthly Order`
@@ -200,7 +202,8 @@ The source "Daily Attendance" sheet can carry more than one shift row for the sa
 - **Store Map** — CPO-colored map markers per store (uses lat/lng from master data)
 - **Cost Optimizer** — ranked cost reduction options per store (see section below)
 - **Payment Detail** (added 1 Sept 2026) — flat, filterable picker-level payment/attendance table across Daily/Weekly/Monthly: Shopper ID, Name, 3PL, Vendor ID, Store, Chain, Present/Absent/On-Leave Days, Deduction Hours/Cost, OT Days/Value, Total Cost. Filters: Chain, Store, 3PL, free-text search. Built client-side (`renderPaymentDetail()` + `pd*` functions) by flattening the same per-store `pickers` array the Dashboard tab uses — reuses `getCPOData`/`APP.cache` under a separate `paydetail_*` cache-key prefix. CSV export via `pdExportCSV()`.
-- **Settings** — Vendor Rates, Employee Costs, Working Days, Optimizer Config, Fetch All Data (admin), User Access (admin), Email Reports (admin)
+- **Project Berry** (added 18 Oct 2026, index.html / GitHub Pages only — see dedicated section below) — only visible once enabled in Settings. Shows, per overlap store and period, Talabat orders, Instashop orders, total picker cost before split, and each side's cost share. Built client-side (`renderProjectBerry()` + `pbr*` functions), reuses the same `getCPOData` call as Payment Detail under a separate `projectberry_*` cache-key prefix. CSV export via `pbrExportCSV()`.
+- **Settings** — Vendor Rates, Employee Costs, Working Days, Optimizer Config, Project Berry (admin), Fetch All Data (admin), User Access (admin), Email Reports (admin)
 
 ---
 
@@ -475,6 +478,91 @@ Alternatively: set up auto-fetch in Settings → Fetch All Data → Auto-schedul
 - `minPickers = max(theoreticalMinFromPeak, currentPickers - 1)` — re-evaluate after each step rather than jumping straight to a theoretical minimum
 - When the cap actually changes the outcome (theoretical minimum is more than 1 below current), a note is added explaining the theoretical minimum and that the step was capped
 - No external reliever role — coverage during a picker's day off is either OT paid to a colleague (`covOTFull`/`covOTThis`) or, when no timing data exists, a flat OT-based estimate. Never reintroduce "reliever" as a distinct cost line in this flow (see also "Critical Bugs Fixed" below)
+
+---
+
+## Project Berry — Instashop Picker-Cost Sharing (added 18 Oct 2026, GitHub Pages / index.html only)
+
+### What it is
+Talabat and Instashop are both owned by the same parent company but run separate
+operations. At a handful of stores, both companies' orders are fulfilled by the
+*same* Talabat pickers — Instashop doesn't deploy its own pickers there because
+order volume doesn't justify it. Project Berry charges Instashop back for its
+share of that picker's cost, splitting the store's total picker cost between
+Talabat and Instashop in proportion to each side's order volume for the period.
+
+### Worked example (from the actual spec)
+A store has 2 pickers at AED 2,000 each (AED 4,000 total picker cost that
+month). Talabat gets 100 orders, Instashop gets 100 orders that same month.
+CPO = 4,000 ÷ 200 = AED 20/order → AED 2,000 charged to each side.
+If instead Talabat gets 150 and Instashop gets 50: still AED 20/order →
+AED 3,000 to Talabat, AED 1,000 to Instashop. The split is always proportional
+to order share, never a flat 50/50 — see `compute_cpo()`'s Project Berry block.
+
+### Data source
+- A separate Google Sheet, "Instashop - Master Order" (see Google Sheet IDs
+  above), with its own `Insta daily` / `Insta Weekly` / `Insta Monthly` tabs —
+  laid out identically to Talabat's own Orders tabs (Chain Id, Chain Name,
+  Vendor Id, Vendor Name, then one 'Successful Orders' column per date label).
+  Weekly labels are week-STARTING dates here too, confirmed the same way as
+  the Talabat sheet (see "Weekly date label was read backwards" above).
+- A `Mapping` tab on the same sheet: Instashop ID -> Talabat Vendor ID,
+  Branch Name, Emirates, Location. **Only vendors listed here are overlap
+  stores** — any Instashop store not in this mapping is a pure-Instashop
+  location with no Talabat picker involved and is ignored entirely, per
+  design. Currently 7 rows, all "SAVA Supermarket" branches (Instashop's
+  "Sava - AE" chain = Talabat's "SAVA Supermarket" chain, same real stores).
+- `read_instashop_mapping()` reads the Mapping tab; `remap_instashop_orders()`
+  re-keys the Instashop orders structure from Instashop's own alphanumeric
+  Vendor Id onto the mapped Talabat Vendor ID, dropping unmapped stores.
+
+### Config toggle — off by default
+- `config/app_config.json` → `projectBerry.enabled` (boolean, default `false`).
+  Editable via **Settings → Project Berry** (admin only), same GitHub-token
+  write path as other config edits (`saveProjectBerryConfig`).
+- When `false`: `main()` never reads the Instashop sheet at all, and
+  `compute_cpo()`'s split logic is skipped entirely — every number is
+  identical to what it would be if Project Berry didn't exist.
+- When `true`: `main()` reads the Instashop sheet (wrapped in try/except —
+  a sheet-sharing hiccup never takes down the whole compute run) and passes
+  the remapped per-period Instashop orders into every `compute_cpo()` call
+  (MTD, every daily/weekly/monthly date).
+
+### Calculation (`compute_cpo()`)
+- For each store, `instashop_order_count` is looked up by date **label**
+  (not position) against the Instashop orders structure, mirroring how
+  `total_orders` is computed for Talabat (same is_mtd/date_index logic).
+- If `instashop_order_count > 0`: `combined = total_orders + instashop_order_count`,
+  `talabat_share = total_orders / combined`. The store's full picker cost
+  (already computed from attendance — OT, deduction, full-salary-floor, etc.
+  all unaffected, computed exactly as before) is split:
+  `pickerCost = full_cost × talabat_share` (this becomes the store's reported
+  Talabat picker cost), `projectBerryCost = full_cost × (1 - talabat_share)`.
+- `orders` (Talabat's own order count) is **never** changed — it stays
+  Talabat-only. This means `pickerCPO = pickerCost / orders` mathematically
+  reduces to `full_cost / combined_orders` — i.e. Talabat's own CPO figure
+  *improves* at overlap stores once Instashop starts paying its share, which
+  is the intended effect, not a bug.
+- New fields on every store result: `projectBerryOrders`, `projectBerryCost`,
+  `totalPickerCostAllOrders` (the pre-split total, for transparency). All
+  zero for non-overlap stores or when the feature is off.
+- `REQUIRED_STORE_FIELDS` includes `projectBerryCost` so the existing
+  field-backfill migration (see `_needs_field_backfill`) forces a one-time
+  recompute of any frozen file that predates this feature.
+
+### UI (index.html only — GAS/Dashboard.html does NOT have this)
+- New **Project Berry** nav tab, hidden (`display:none`) until
+  `projectBerryConfig.enabled` is true. Period selector (Daily/Weekly/
+  Monthly) identical to Payment Detail's. Table: Vendor ID, Store, Chain,
+  City, Talabat Orders, Instashop Orders, Total Orders, Total Picker Cost,
+  Talabat Share, Instashop Share, with a totals row. Only rows with
+  `projectBerryOrders > 0` for the selected period are shown. CSV export.
+- **Deliberately not implemented in Code.gs/Dashboard.html** — GAS is not
+  the live deployment (see Architecture above) and has no equivalent sheet
+  read, so adding the UI there without the backend would just show an
+  always-empty tab. If GAS is ever brought back as the live path, port
+  `read_instashop_mapping()`/`remap_instashop_orders()`/the `compute_cpo()`
+  split block to `Code.gs` first.
 
 ---
 
