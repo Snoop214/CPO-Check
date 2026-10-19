@@ -1212,13 +1212,13 @@ function pbrRenderTable(){
   h+='<div style="display:flex;justify-content:flex-end;margin-bottom:8px"><button class="btn btn-sm btn-outline" onclick="pbrExportCSV()"><i class="fas fa-download" style="margin-right:4px"></i>Export CSV</button></div>';
   var ORD_BG='#fdf1e6', ORD_BG_ROW='#fffaf5', COST_BG='#eef6ee', COST_BG_ROW='#f6faf6';
   h+='<div style="overflow-x:auto"><table class="data-table"><thead>';
-  h+='<tr><th colspan="4"></th><th colspan="3" style="text-align:center;background:'+ORD_BG+'">ORDERS THIS PERIOD</th><th colspan="3" style="text-align:center;background:'+COST_BG+'">PICKER COST SPLIT ('+cur+')</th></tr>';
+  h+='<tr><th colspan="4" style="background:var(--dark)"></th><th colspan="3" style="text-align:center;background:'+ORD_BG+';color:var(--text)">ORDERS THIS PERIOD</th><th colspan="3" style="text-align:center;background:'+COST_BG+';color:var(--text)">PICKER COST SPLIT ('+cur+')</th></tr>';
   h+='<tr>';
   ['Vendor ID','Store','Chain','City'].forEach(function(c){h+='<th>'+c+'</th>';});
-  h+='<th style="background:'+ORD_BG+'">Talabat</th><th style="background:'+ORD_BG+'">Instashop</th><th style="background:'+ORD_BG+'">Total</th>';
-  h+='<th style="background:'+COST_BG+'" title="Full picker cost at this store before any Project Berry split">Total Cost</th>';
-  h+='<th style="background:'+COST_BG+'" title="Share of the picker cost kept on Talabat">Talabat Pays</th>';
-  h+='<th style="background:'+COST_BG+'" title="Share of the picker cost charged back to Instashop">Instashop Pays</th>';
+  h+='<th style="background:'+ORD_BG+';color:var(--text)">Talabat</th><th style="background:'+ORD_BG+';color:var(--text)">Instashop</th><th style="background:'+ORD_BG+';color:var(--text)">Total</th>';
+  h+='<th style="background:'+COST_BG+';color:var(--text)" title="Full picker cost at this store before any Project Berry split">Total Cost</th>';
+  h+='<th style="background:'+COST_BG+';color:var(--text)" title="Share of the picker cost kept on Talabat">Talabat Pays</th>';
+  h+='<th style="background:'+COST_BG+';color:var(--text)" title="Share of the picker cost charged back to Instashop">Instashop Pays</th>';
   h+='</tr></thead><tbody>';
   rows.forEach(function(r){
     totTalabatO+=r.talabatOrders; totInstaO+=r.instashopOrders; totCost+=r.totalPickerCostAllOrders;
