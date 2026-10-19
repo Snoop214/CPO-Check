@@ -1208,30 +1208,43 @@ function pbrRenderTable(){
   }
   var cur=_getCurrency();
   var totTalabatO=0,totInstaO=0,totCost=0,totTalabatC=0,totInstaC=0;
-  var h='<div style="margin-bottom:8px;font-size:12px;color:var(--muted)"><i class="fas fa-calendar-alt" style="margin-right:4px"></i>'+(APP.pbr.dateLabel||'')+'</div>';
-  h+='<div style="display:flex;justify-content:flex-end;margin-bottom:8px"><button class="btn btn-sm btn-outline" onclick="pbrExportCSV()"><i class="fas fa-download" style="margin-right:4px"></i>Export CSV</button></div>';
-  var ORD_BG='#fdf1e6', ORD_BG_ROW='#fffaf5', COST_BG='#eef6ee', COST_BG_ROW='#f6faf6';
-  h+='<div style="overflow-x:auto"><table class="data-table"><thead>';
-  h+='<tr><th colspan="4" style="background:var(--dark)"></th><th colspan="3" style="text-align:center;background:'+ORD_BG+';color:var(--text)">ORDERS THIS PERIOD</th><th colspan="3" style="text-align:center;background:'+COST_BG+';color:var(--text)">PICKER COST SPLIT ('+cur+')</th></tr>';
-  h+='<tr>';
-  ['Vendor ID','Store','Chain','City'].forEach(function(c){h+='<th>'+c+'</th>';});
-  h+='<th style="background:'+ORD_BG+';color:var(--text)">Talabat</th><th style="background:'+ORD_BG+';color:var(--text)">Instashop</th><th style="background:'+ORD_BG+';color:var(--text)">Total</th>';
-  h+='<th style="background:'+COST_BG+';color:var(--text)" title="Full picker cost at this store before any Project Berry split">Total Cost</th>';
-  h+='<th style="background:'+COST_BG+';color:var(--text)" title="Share of the picker cost kept on Talabat">Talabat Pays</th>';
-  h+='<th style="background:'+COST_BG+';color:var(--text)" title="Share of the picker cost charged back to Instashop">Instashop Pays</th>';
-  h+='</tr></thead><tbody>';
   rows.forEach(function(r){
     totTalabatO+=r.talabatOrders; totInstaO+=r.instashopOrders; totCost+=r.totalPickerCostAllOrders;
     totTalabatC+=r.talabatCost; totInstaC+=r.instashopCost;
+  });
+  var DIV='border-left:2px solid var(--border)';
+  var h='<div style="margin-bottom:8px;font-size:12px;color:var(--muted)"><i class="fas fa-calendar-alt" style="margin-right:4px"></i>'+(APP.pbr.dateLabel||'')+'</div>';
+  h+='<div class="kpi-row">';
+  h+='<div class="kpi"><div class="kpi-label">Overlap Stores</div><div class="kpi-value">'+rows.length+'</div><div class="kpi-sub">'+fmt(totTalabatO+totInstaO)+' total orders</div></div>';
+  h+='<div class="kpi"><div class="kpi-label">Total Picker Cost</div><div class="kpi-value">'+cur+' '+fmt(totCost)+'</div><div class="kpi-sub">across '+rows.length+' overlap stores</div></div>';
+  h+='<div class="kpi"><div class="kpi-label">Talabat Pays</div><div class="kpi-value" style="color:var(--primary)">'+cur+' '+fmt(totTalabatC)+'</div><div class="kpi-sub">'+fmt(totTalabatO)+' Talabat orders</div></div>';
+  h+='<div class="kpi"><div class="kpi-label">Instashop Pays</div><div class="kpi-value" style="color:var(--blue)">'+cur+' '+fmt(totInstaC)+'</div><div class="kpi-sub">'+fmt(totInstaO)+' Instashop orders</div></div>';
+  h+='</div>';
+  h+='<div class="table-wrap"><div class="table-toolbar">';
+  h+='<span style="font-size:11px;color:var(--muted)">'+rows.length+' overlap stores · <span style="color:var(--primary);font-weight:600">Talabat</span> / <span style="color:var(--blue);font-weight:600">Instashop</span> cost split shown below</span>';
+  h+='<button class="btn btn-sm btn-outline" onclick="pbrExportCSV()"><i class="fas fa-download"></i> Export</button>';
+  h+='</div><div class="tbl-scroll"><table><thead><tr>';
+  h+='<th>Vendor ID</th><th>Store</th><th>Chain</th><th>City</th>';
+  h+='<th style="text-align:right;'+DIV+'">Talabat Orders</th><th style="text-align:right">Instashop Orders</th><th style="text-align:right">Total Orders</th>';
+  h+='<th style="text-align:right;'+DIV+'" title="Full picker cost at this store before any Project Berry split">Total Picker Cost</th>';
+  h+='<th style="text-align:right" title="Share of the picker cost kept on Talabat">Talabat Pays</th>';
+  h+='<th style="text-align:right" title="Share of the picker cost charged back to Instashop">Instashop Pays</th>';
+  h+='</tr></thead><tbody>';
+  rows.forEach(function(r){
     h+='<tr><td>'+r.vendorId+'</td><td>'+r.storeName+'</td><td>'+r.chain+'</td><td>'+r.city+'</td>'
-      +'<td style="background:'+ORD_BG_ROW+'">'+fmt(r.talabatOrders)+'</td><td style="background:'+ORD_BG_ROW+'">'+fmt(r.instashopOrders)+'</td><td style="background:'+ORD_BG_ROW+';font-weight:600">'+fmt(r.totalOrders)+'</td>'
-      +'<td style="background:'+COST_BG_ROW+';font-weight:600">'+cur+' '+fmt(r.totalPickerCostAllOrders)+'</td>'
-      +'<td style="background:'+COST_BG_ROW+'">'+cur+' '+fmt(r.talabatCost)+'</td><td style="background:'+COST_BG_ROW+'">'+cur+' '+fmt(r.instashopCost)+'</td></tr>';
+      +'<td style="text-align:right;'+DIV+';color:var(--primary);font-weight:600">'+fmt(r.talabatOrders)+'</td>'
+      +'<td style="text-align:right;color:var(--blue);font-weight:600">'+fmt(r.instashopOrders)+'</td>'
+      +'<td style="text-align:right;font-weight:600">'+fmt(r.totalOrders)+'</td>'
+      +'<td style="text-align:right;'+DIV+';font-weight:600">'+cur+' '+fmt(r.totalPickerCostAllOrders)+'</td>'
+      +'<td style="text-align:right;color:var(--primary);font-weight:600">'+cur+' '+fmt(r.talabatCost)+'</td>'
+      +'<td style="text-align:right;color:var(--blue);font-weight:600">'+cur+' '+fmt(r.instashopCost)+'</td></tr>';
   });
   h+='<tr style="font-weight:700;background:var(--cream)"><td colspan="4">Total ('+rows.length+' stores)</td>'
-    +'<td>'+fmt(totTalabatO)+'</td><td>'+fmt(totInstaO)+'</td><td>'+fmt(totTalabatO+totInstaO)+'</td>'
-    +'<td>'+cur+' '+fmt(totCost)+'</td><td>'+cur+' '+fmt(totTalabatC)+'</td><td>'+cur+' '+fmt(totInstaC)+'</td></tr>';
-  h+='</tbody></table></div>';
+    +'<td style="text-align:right;'+DIV+'">'+fmt(totTalabatO)+'</td><td style="text-align:right">'+fmt(totInstaO)+'</td><td style="text-align:right">'+fmt(totTalabatO+totInstaO)+'</td>'
+    +'<td style="text-align:right;'+DIV+'">'+cur+' '+fmt(totCost)+'</td>'
+    +'<td style="text-align:right;color:var(--primary)">'+cur+' '+fmt(totTalabatC)+'</td>'
+    +'<td style="text-align:right;color:var(--blue)">'+cur+' '+fmt(totInstaC)+'</td></tr>';
+  h+='</tbody></table></div></div>';
   area.innerHTML=h;
 }
 function pbrExportCSV(){
