@@ -49,8 +49,8 @@ body{font-family:'Poppins',sans-serif;background:var(--bg);color:var(--text);min
 .table-toolbar{padding:10px 14px;display:flex;align-items:center;justify-content:space-between;border-bottom:1px solid var(--border)}
 .search-input{padding:6px 10px;border:1.5px solid var(--border);border-radius:7px;font-family:inherit;font-size:12px;width:240px;transition:width .2s}
 .search-input:focus{outline:none;border-color:var(--primary);width:300px}
-.tbl-scroll{overflow:auto;max-height:480px}
-.pd-tbl-scroll{max-height:min(78vh,900px)}
+.tbl-scroll{overflow-x:auto;overflow-y:visible}
+.pd-tbl-scroll{max-height:none}
 table{width:100%;border-collapse:collapse}
 thead th{background:var(--dark);color:#fff;padding:9px 12px;font-size:10px;font-weight:600;text-transform:uppercase;letter-spacing:.5px;cursor:pointer;white-space:nowrap;position:sticky;top:0;user-select:none}
 thead th:hover{background:#5a2225}
