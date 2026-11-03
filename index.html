@@ -49,11 +49,11 @@ body{font-family:'Poppins',sans-serif;background:var(--bg);color:var(--text);min
 .table-toolbar{padding:10px 14px;display:flex;align-items:center;justify-content:space-between;border-bottom:1px solid var(--border)}
 .search-input{padding:6px 10px;border:1.5px solid var(--border);border-radius:7px;font-family:inherit;font-size:12px;width:240px;transition:width .2s}
 .search-input:focus{outline:none;border-color:var(--primary);width:300px}
-.tbl-scroll{overflow:auto;max-height:max(480px,calc(100vh - 300px));scrollbar-width:none;-ms-overflow-style:none}
+.tbl-scroll{overflow-x:auto;overflow-y:hidden;scrollbar-width:none;-ms-overflow-style:none}
 .tbl-scroll::-webkit-scrollbar{display:none;width:0;height:0}
 html,body{scrollbar-width:none;-ms-overflow-style:none}
 html::-webkit-scrollbar,body::-webkit-scrollbar{display:none;width:0;height:0}
-.pd-tbl-scroll{max-height:min(78vh,900px)}
+.pd-tbl-scroll{max-height:none}
 table{width:100%;border-collapse:collapse}
 thead th{background:var(--dark);color:#fff;padding:9px 12px;font-size:10px;font-weight:600;text-transform:uppercase;letter-spacing:.5px;cursor:pointer;white-space:nowrap;position:sticky;top:0;user-select:none}
 thead th:hover{background:#5a2225}
@@ -820,11 +820,23 @@ function renderDashboard(){
     var pks=r.pickers||[];
     if(pks.length){
       html+='<table style="width:100%;font-size:11px;border-collapse:collapse"><thead><tr style="background:#f1ede4">';
-      html+='<th style="padding:5px 10px;text-align:left;font-weight:600">Shopper ID</th><th style="padding:5px 10px;text-align:left;font-weight:600">Picker Name</th><th style="padding:5px 10px;text-align:left;font-weight:600">3PL</th><th style="padding:5px 10px;text-align:right;font-weight:600">Present Days</th><th style="padding:5px 10px;text-align:right;font-weight:600">Deduction Days</th></tr></thead><tbody>';
+      var _th='padding:5px 10px;font-weight:600;';
+      html+='<th style="'+_th+'text-align:left">Shopper ID</th><th style="'+_th+'text-align:left">Picker Name</th><th style="'+_th+'text-align:left">3PL</th><th style="'+_th+'text-align:right">Present Days</th><th style="'+_th+'text-align:right">Deducted Hrs</th><th style="'+_th+'text-align:right">Deducted Amt</th><th style="'+_th+'text-align:right">Picker Cost</th><th style="'+_th+'text-align:right">Hours Worked</th><th style="'+_th+'text-align:right">Orders (alloc.)</th><th style="'+_th+'text-align:right">UTR</th><th style="'+_th+'text-align:right" title="Standard deviations from the store mean UTR">vs Store (σ)</th></tr></thead><tbody>';
       pks.forEach(function(p){
-        html+='<tr><td style="padding:4px 10px">'+(p.shopperId||'—')+'</td><td style="padding:4px 10px">'+(p.name||'—')+'</td><td style="padding:4px 10px">'+(p.department||'—')+'</td><td style="padding:4px 10px;text-align:right">'+(p.presentDays!=null?p.presentDays:'—')+'</td><td style="padding:4px 10px;text-align:right">'+(p.deductionDays||0)+'</td></tr>';
+        var z=p.utrZ||0, zc=z<=-1?'var(--danger)':(z>=1?'var(--success)':'var(--muted)');
+        var _td='padding:4px 10px;text-align:right';
+        html+='<tr><td style="padding:4px 10px">'+(p.shopperId||'—')+'</td><td style="padding:4px 10px">'+(p.name||'—')+'</td><td style="padding:4px 10px">'+(p.department||'—')+'</td>'
+          +'<td style="'+_td+'">'+(p.presentDays!=null?p.presentDays:'—')+'</td>'
+          +'<td style="'+_td+(p.deductionHours>0?';color:#ea580c;font-weight:600':'')+'">'+(p.deductionHours||0)+'</td>'
+          +'<td style="'+_td+'">'+_getCurrency()+' '+fmt(Math.round(p.deductionCost||0))+'</td>'
+          +'<td style="'+_td+';font-weight:600">'+_getCurrency()+' '+fmt(Math.round(p.cost||0))+'</td>'
+          +'<td style="'+_td+'">'+(p.hours!=null?p.hours:'—')+'</td>'
+          +'<td style="'+_td+'">'+(p.ordersAlloc!=null?p.ordersAlloc:'—')+'</td>'
+          +'<td style="'+_td+';font-weight:600;color:var(--blue)">'+(p.utr!=null?Number(p.utr).toFixed(2):'—')+'</td>'
+          +'<td style="'+_td+';font-weight:600;color:'+zc+'">'+(z>0?'+':'')+Number(z).toFixed(2)+'</td></tr>';
       });
       html+='</tbody></table>';
+      html+='<div style="padding:6px 10px;font-size:10px;color:var(--muted);background:#f1ede4">Store UTR mean '+(r.utrMean!=null?Number(r.utrMean).toFixed(2):'—')+' · std dev (σ) '+(r.utrStd!=null?Number(r.utrStd).toFixed(2):'—')+' orders/hr. Picker UTR = store orders allocated by present days ÷ hours worked (days × shift hours − deducted hours). σ shows how far each picker is from the store mean (red ≤ −1σ, green ≥ +1σ).</div>';
     }else{
       html+='<div style="padding:10px 14px;color:var(--muted);font-size:11px">No picker-level detail available for this period.</div>';
     }

@@ -119,7 +119,7 @@ def _output_period_frozen(filename, end_date, period_type):
 # field it never triggers this branch again, and it never touches `cost` or
 # any other already-computed number — only adds fields that were previously
 # absent, using the same historical inputs as the original computation.
-REQUIRED_STORE_FIELDS = ('holOtDays', 'holOtCost', 'projectBerryCost')
+REQUIRED_STORE_FIELDS = ('holOtDays', 'holOtCost', 'projectBerryCost', 'utrMean')
 
 def _needs_field_backfill(path):
     try:
@@ -1080,6 +1080,25 @@ def compute_cpo(period, date_index, orders, attend, master, cfg, is_mtd=False, i
         loaded_cpo  = loaded_cost / total_orders if total_orders > 0 else 0
         utr         = total_orders / total_hours if total_hours > 0 and total_orders > 0 else 0
 
+        # Per-picker UTR (orders/hour). Order data is store-level only, so each
+        # picker is allocated a share of the store's orders proportional to
+        # their present days; hours = present days x vendor shift hours minus
+        # late/early deduction hours. Pickers therefore differ only by shift
+        # length (3PL contract hours) and deductions. Mean + population
+        # standard deviation across the store's pickers give a z-score so
+        # outliers stand out in the UI.
+        pk_total_days = sum(p['days'] for p in picker_days_list)
+        pk_utrs = []
+        for p in picker_days_list:
+            hrs_p = max(p['days'] * p.get('hours', 0) - p.get('deductionDays', 0), 0)
+            ord_p = total_orders * p['days'] / pk_total_days if pk_total_days > 0 else 0
+            p['_hrs'] = hrs_p
+            p['_ord'] = ord_p
+            p['_utr'] = ord_p / hrs_p if hrs_p > 0 else 0
+            pk_utrs.append(p['_utr'])
+        utr_mean = sum(pk_utrs) / len(pk_utrs) if pk_utrs else 0
+        utr_std  = (sum((x - utr_mean) ** 2 for x in pk_utrs) / len(pk_utrs)) ** 0.5 if pk_utrs else 0
+
         if total_orders > 0 or picker_count > 0:
             results.append({
                 'vendorId': vendor_id, 'storeName': vendor_name,
@@ -1121,8 +1140,14 @@ def compute_cpo(period, date_index, orders, attend, master, cfg, is_mtd=False, i
                              'holOtDays': p.get('holOtDays', 0),
                              'holOtCost': p.get('holOtCost', 0),
                              'fullSalaryFloor': p.get('fullSalaryFloor', False),
-                             'cost': p.get('cost', 0)}
+                             'cost': p.get('cost', 0),
+                             'hours': round(p.get('_hrs', 0), 1),
+                             'ordersAlloc': round(p.get('_ord', 0), 1),
+                             'utr': round(p.get('_utr', 0), 2),
+                             'utrZ': round((p.get('_utr', 0) - utr_mean) / utr_std, 2) if utr_std > 0 else 0}
                             for p in picker_days_list],
+                'utrMean': round(utr_mean, 2),
+                'utrStd':  round(utr_std, 2),
             })
 
     # MTD last valid date
