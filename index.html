@@ -45,7 +45,7 @@ body{font-family:'Poppins',sans-serif;background:var(--bg);color:var(--text);min
 .kpi-label{font-size:10px;font-weight:600;color:var(--muted);text-transform:uppercase;letter-spacing:.5px;margin-bottom:5px}
 .kpi-value{font-size:24px;font-weight:700;color:var(--dark);line-height:1.1}
 .kpi-sub{font-size:10px;color:var(--muted);margin-top:3px}
-.table-wrap{background:var(--card);border-radius:var(--radius);box-shadow:var(--shadow);overflow:hidden;margin-bottom:20px}
+.table-wrap{background:var(--card);border-radius:var(--radius);box-shadow:var(--shadow);overflow:hidden;margin-bottom:20px;min-height:calc(100vh - 420px)}
 .table-toolbar{padding:10px 14px;display:flex;align-items:center;justify-content:space-between;border-bottom:1px solid var(--border)}
 .search-input{padding:6px 10px;border:1.5px solid var(--border);border-radius:7px;font-family:inherit;font-size:12px;width:240px;transition:width .2s}
 .search-input:focus{outline:none;border-color:var(--primary);width:300px}
@@ -1094,7 +1094,7 @@ function renderProjectBerry(){
     document.getElementById('mainContent').innerHTML=html+'</div>';
     return;
   }
-  if(!APP.pbr)APP.pbr={period:'mtd',dateIdx:null,rows:[],loaded:false,dateLabel:''};
+  if(!APP.pbr)APP.pbr={period:'mtd',dateIdx:null,rows:[],allRows:[],filters:{},loaded:false,dateLabel:''};
   var pbr=APP.pbr;
   html+='<div style="background:var(--cream);border-radius:var(--radius);padding:16px;margin-bottom:16px;display:flex;flex-wrap:wrap;gap:14px;align-items:flex-end">';
   html+='<div><div style="font-size:10px;font-weight:600;color:var(--muted);text-transform:uppercase;margin-bottom:4px">Period</div>';
@@ -1106,11 +1106,12 @@ function renderProjectBerry(){
   html+='<div class="fg" id="pbrSelectWrap"><label>Select</label><select id="pbrDatePicker" style="background-image:none;padding-right:8px"></select></div>';
   html+='<div><button class="btn btn-primary btn-sm" onclick="pbrCompute()" style="white-space:nowrap"><i class="fas fa-play"></i> Compute</button></div>';
   html+='</div>';
+  html+='<div id="pbrFilterBar" style="display:none;background:var(--card);border-radius:var(--radius);padding:10px 14px;margin-bottom:12px;box-shadow:var(--shadow);gap:10px;flex-wrap:wrap;align-items:flex-end"></div>';
   html+='<div id="pbrTableArea"><div class="empty-state"><i class="fas fa-seedling" style="font-size:36px;display:block;margin-bottom:10px;opacity:.3"></i><p>Select a period/date and click <strong>Compute</strong> to load the Talabat/Instashop cost split.</p></div></div>';
   html+='</div>';
   document.getElementById('mainContent').innerHTML=html;
   pbrPopulateDatePicker(pbr.period);
-  if(pbr.loaded)pbrRenderTable();
+  if(pbr.loaded){pbrPopulateFilterOptions();pbrRenderTable();}
 }
 function pbrSetPeriod(period){
   APP.pbr.period=period;
@@ -1120,6 +1121,8 @@ function pbrSetPeriod(period){
   var area=document.getElementById('pbrTableArea');
   var msg=period==='mtdsum'?'Click <strong>Compute</strong> to load the current month-to-date Talabat/Instashop cost split.':'Select a date and click <strong>Compute</strong> to load the Talabat/Instashop cost split.';
   if(area)area.innerHTML='<div class="empty-state"><i class="fas fa-seedling" style="font-size:36px;display:block;margin-bottom:10px;opacity:.3"></i><p>'+msg+'</p></div>';
+  var fbar=document.getElementById('pbrFilterBar');
+  if(fbar){fbar.style.display='none';fbar.innerHTML='';}
 }
 function pbrPopulateDatePicker(period){
   var wrap=document.getElementById('pbrSelectWrap');
@@ -1186,16 +1189,65 @@ function pbrOnData(r){
     var instaOrders=store.projectBerryOrders||0;
     if(instaOrders<=0)return; // only overlap stores with actual Instashop volume this period
     var talabatOrders=store.orders||0;
+    var talabatCost=store.pickerCost||0, instaCost=store.projectBerryCost||0;
     rows.push({
       vendorId: store.vendorId, storeName: store.storeName, chain: store.chain, city: store.city,
+      supervisor: store.supervisor||'', champion: store.champion||'', dept3pl: store.dept3pl||'',
       talabatOrders: talabatOrders, instashopOrders: instaOrders, totalOrders: talabatOrders+instaOrders,
       totalPickerCostAllOrders: store.totalPickerCostAllOrders||0,
-      talabatCost: store.pickerCost||0, instashopCost: store.projectBerryCost||0,
+      talabatCost: talabatCost, instashopCost: instaCost,
+      talabatCPO: talabatOrders>0?talabatCost/talabatOrders:0,
+      instashopCPO: instaOrders>0?instaCost/instaOrders:0,
+      totalCPO: (talabatOrders+instaOrders)>0?(store.totalPickerCostAllOrders||0)/(talabatOrders+instaOrders):0,
     });
   });
-  APP.pbr.rows=rows;
+  APP.pbr.allRows=rows;
   APP.pbr.dateLabel=r.dateLabel||'';
   APP.pbr.loaded=true;
+  pbrPopulateFilterOptions();
+  pbrApplyFilters();
+}
+function pbrPopulateFilterOptions(){
+  var bar=document.getElementById('pbrFilterBar');
+  if(!bar)return;
+  var rows=APP.pbr.allRows||[];
+  if(!rows.length){bar.style.display='none';bar.innerHTML='';return;}
+  var chains={},cities={},sups={};
+  rows.forEach(function(r){
+    if(r.chain)chains[r.chain]=1;
+    if(r.city)cities[r.city]=1;
+    if(r.supervisor)sups[r.supervisor]=1;
+  });
+  var f=APP.pbr.filters||(APP.pbr.filters={});
+  function opts(map,cur){
+    var h='<option value="">All</option>';
+    Object.keys(map).sort().forEach(function(k){h+='<option value="'+k+'"'+(k===cur?' selected':'')+'>'+k+'</option>';});
+    return h;
+  }
+  var h='<div class="fg"><label>Chain</label><select id="pbrFChain" onchange="pbrApplyFilters()">'+opts(chains,f.chain)+'</select></div>';
+  h+='<div class="fg"><label>City</label><select id="pbrFCity" onchange="pbrApplyFilters()">'+opts(cities,f.city)+'</select></div>';
+  h+='<div class="fg"><label>Supervisor</label><select id="pbrFSup" onchange="pbrApplyFilters()">'+opts(sups,f.sup)+'</select></div>';
+  h+='<div class="fg" style="flex:1;min-width:180px"><label>Search</label><input class="search-input" id="pbrFSearch" placeholder="Store name or Vendor ID..." value="'+(f.q?f.q.replace(/"/g,'&quot;'):'')+'" oninput="pbrApplyFilters()"></div>';
+  bar.innerHTML=h;
+  bar.style.display='flex';
+}
+function pbrApplyFilters(){
+  var f=APP.pbr.filters||(APP.pbr.filters={});
+  f.chain=(document.getElementById('pbrFChain')||{}).value||'';
+  f.city=(document.getElementById('pbrFCity')||{}).value||'';
+  f.sup=(document.getElementById('pbrFSup')||{}).value||'';
+  f.q=((document.getElementById('pbrFSearch')||{}).value||'').toLowerCase().trim();
+  var all=APP.pbr.allRows||[];
+  APP.pbr.rows=all.filter(function(r){
+    if(f.chain&&r.chain!==f.chain)return false;
+    if(f.city&&r.city!==f.city)return false;
+    if(f.sup&&r.supervisor!==f.sup)return false;
+    if(f.q){
+      var hay=(r.storeName+' '+r.vendorId+' '+r.chain).toLowerCase();
+      if(hay.indexOf(f.q)<0)return false;
+    }
+    return true;
+  });
   pbrRenderTable();
 }
 function pbrRenderTable(){
@@ -1203,7 +1255,8 @@ function pbrRenderTable(){
   if(!area)return;
   var rows=APP.pbr.rows||[];
   if(!rows.length){
-    area.innerHTML='<div class="empty-state"><i class="fas fa-seedling" style="font-size:36px;display:block;margin-bottom:10px;opacity:.3"></i><p>No Project Berry overlap stores had Instashop orders for this period.</p></div>';
+    var noDataMsg=(APP.pbr.allRows||[]).length?'No overlap stores match your filters.':'No Project Berry overlap stores had Instashop orders for this period.';
+    area.innerHTML='<div class="empty-state"><i class="fas fa-seedling" style="font-size:36px;display:block;margin-bottom:10px;opacity:.3"></i><p>'+noDataMsg+'</p></div>';
     return;
   }
   var cur=_getCurrency();
@@ -1217,8 +1270,11 @@ function pbrRenderTable(){
   h+='<div class="kpi-row">';
   h+='<div class="kpi"><div class="kpi-label">Overlap Stores</div><div class="kpi-value">'+rows.length+'</div><div class="kpi-sub">'+fmt(totTalabatO+totInstaO)+' total orders</div></div>';
   h+='<div class="kpi"><div class="kpi-label">Total Picker Cost</div><div class="kpi-value">'+cur+' '+fmt(totCost)+'</div><div class="kpi-sub">across '+rows.length+' overlap stores</div></div>';
-  h+='<div class="kpi"><div class="kpi-label">Talabat Pays</div><div class="kpi-value" style="color:var(--primary)">'+cur+' '+fmt(totTalabatC)+'</div><div class="kpi-sub">'+fmt(totTalabatO)+' Talabat orders</div></div>';
-  h+='<div class="kpi"><div class="kpi-label">Instashop Pays</div><div class="kpi-value" style="color:var(--blue)">'+cur+' '+fmt(totInstaC)+'</div><div class="kpi-sub">'+fmt(totInstaO)+' Instashop orders</div></div>';
+  var talabatCPO=totTalabatO>0?totTalabatC/totTalabatO:0, instaCPO=totInstaO>0?totInstaC/totInstaO:0;
+  var totTotalCPO=(totTalabatO+totInstaO)>0?totCost/(totTalabatO+totInstaO):0;
+  h+='<div class="kpi"><div class="kpi-label">Talabat Pays</div><div class="kpi-value" style="color:var(--primary)">'+cur+' '+fmt(totTalabatC)+'</div><div class="kpi-sub">'+fmt(totTalabatO)+' orders · '+cur+' '+talabatCPO.toFixed(2)+'/order</div></div>';
+  h+='<div class="kpi"><div class="kpi-label">Instashop Pays</div><div class="kpi-value" style="color:var(--blue)">'+cur+' '+fmt(totInstaC)+'</div><div class="kpi-sub">'+fmt(totInstaO)+' orders · '+cur+' '+instaCPO.toFixed(2)+'/order</div></div>';
+  h+='<div class="kpi"><div class="kpi-label">Blended CPO</div><div class="kpi-value" style="color:var(--purple)">'+cur+' '+totTotalCPO.toFixed(2)+'</div><div class="kpi-sub">across both Talabat + Instashop orders</div></div>';
   h+='</div>';
   h+='<div class="table-wrap"><div class="table-toolbar">';
   h+='<span style="font-size:11px;color:var(--muted)">'+rows.length+' overlap stores · <span style="color:var(--primary);font-weight:600">Talabat</span> / <span style="color:var(--blue);font-weight:600">Instashop</span> cost split shown below</span>';
@@ -1229,6 +1285,9 @@ function pbrRenderTable(){
   h+='<th style="text-align:right;'+DIV+'" title="Full picker cost at this store before any Project Berry split">Total Picker Cost</th>';
   h+='<th style="text-align:right" title="Share of the picker cost kept on Talabat">Talabat Pays</th>';
   h+='<th style="text-align:right" title="Share of the picker cost charged back to Instashop">Instashop Pays</th>';
+  h+='<th style="text-align:right;'+DIV+'" title="Blended cost per order across both Talabat + Instashop orders at this store">Total CPO</th>';
+  h+='<th style="text-align:right" title="Talabat Pays ÷ Talabat Orders">Talabat CPO</th>';
+  h+='<th style="text-align:right" title="Instashop Pays ÷ Instashop Orders">Instashop CPO</th>';
   h+='</tr></thead><tbody>';
   rows.forEach(function(r){
     h+='<tr><td>'+r.vendorId+'</td><td>'+r.storeName+'</td><td>'+r.chain+'</td><td>'+r.city+'</td>'
@@ -1237,22 +1296,28 @@ function pbrRenderTable(){
       +'<td style="text-align:right;font-weight:600">'+fmt(r.totalOrders)+'</td>'
       +'<td style="text-align:right;'+DIV+';font-weight:600">'+cur+' '+fmt(r.totalPickerCostAllOrders)+'</td>'
       +'<td style="text-align:right;color:var(--primary);font-weight:600">'+cur+' '+fmt(r.talabatCost)+'</td>'
-      +'<td style="text-align:right;color:var(--blue);font-weight:600">'+cur+' '+fmt(r.instashopCost)+'</td></tr>';
+      +'<td style="text-align:right;color:var(--blue);font-weight:600">'+cur+' '+fmt(r.instashopCost)+'</td>'
+      +'<td style="text-align:right;'+DIV+'">'+cur+' '+r.totalCPO.toFixed(2)+'</td>'
+      +'<td style="text-align:right;color:var(--primary)">'+cur+' '+r.talabatCPO.toFixed(2)+'</td>'
+      +'<td style="text-align:right;color:var(--blue)">'+cur+' '+r.instashopCPO.toFixed(2)+'</td></tr>';
   });
   h+='<tr style="font-weight:700;background:var(--cream)"><td colspan="4">Total ('+rows.length+' stores)</td>'
     +'<td style="text-align:right;'+DIV+'">'+fmt(totTalabatO)+'</td><td style="text-align:right">'+fmt(totInstaO)+'</td><td style="text-align:right">'+fmt(totTalabatO+totInstaO)+'</td>'
     +'<td style="text-align:right;'+DIV+'">'+cur+' '+fmt(totCost)+'</td>'
     +'<td style="text-align:right;color:var(--primary)">'+cur+' '+fmt(totTalabatC)+'</td>'
-    +'<td style="text-align:right;color:var(--blue)">'+cur+' '+fmt(totInstaC)+'</td></tr>';
+    +'<td style="text-align:right;color:var(--blue)">'+cur+' '+fmt(totInstaC)+'</td>'
+    +'<td style="text-align:right;'+DIV+'">'+cur+' '+totTotalCPO.toFixed(2)+'</td>'
+    +'<td style="text-align:right;color:var(--primary)">'+cur+' '+talabatCPO.toFixed(2)+'</td>'
+    +'<td style="text-align:right;color:var(--blue)">'+cur+' '+instaCPO.toFixed(2)+'</td></tr>';
   h+='</tbody></table></div></div>';
   area.innerHTML=h;
 }
 function pbrExportCSV(){
   var rows=APP.pbr.rows||[];
-  var cols=['vendorId','storeName','chain','city','talabatOrders','instashopOrders','totalOrders','totalPickerCostAllOrders','talabatCost','instashopCost'];
-  var hdrs=['Vendor ID','Store','Chain','City','Talabat Orders','Instashop Orders','Total Orders','Total Picker Cost','Talabat Pays','Instashop Pays'];
+  var cols=['vendorId','storeName','chain','city','supervisor','talabatOrders','instashopOrders','totalOrders','totalPickerCostAllOrders','talabatCost','instashopCost','totalCPO','talabatCPO','instashopCPO'];
+  var hdrs=['Vendor ID','Store','Chain','City','Supervisor','Talabat Orders','Instashop Orders','Total Orders','Total Picker Cost','Talabat Pays','Instashop Pays','Total CPO','Talabat CPO','Instashop CPO'];
   var csv=hdrs.join(',')+'\n';
-  rows.forEach(function(r){csv+=cols.map(function(c){var v=r[c];return typeof v==='string'?'"'+v.replace(/"/g,'""')+'"':(v!=null?v:0);}).join(',')+'\n';});
+  rows.forEach(function(r){csv+=cols.map(function(c){var v=r[c];if(typeof v==='number'&&c.indexOf('CPO')>=0)v=v.toFixed(2);return typeof v==='string'?'"'+v.replace(/"/g,'""')+'"':(v!=null?v:0);}).join(',')+'\n';});
   var a=document.createElement('a');
   a.href=URL.createObjectURL(new Blob([csv],{type:'text/csv'}));
   a.download='ProjectBerry_'+(APP.pbr.period||'')+'_'+(APP.pbr.dateLabel||'').replace(/[^a-zA-Z0-9]/g,'_')+'.csv';
