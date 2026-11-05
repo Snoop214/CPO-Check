@@ -235,7 +235,7 @@
     "edgeOrderThreshold": 1,
     "edgeGMVThreshold": 50,
     "weekdayDayOffOnly": 1,
-    "lateEarlyThresholdMin": 30
+    "lateEarlyThresholdMin": 15
   },
   "projectBerry": {
     "enabled": true
