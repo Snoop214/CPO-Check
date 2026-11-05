@@ -128,6 +128,7 @@ tbody tr:hover{background:#f0ebe4}
       <button onclick="switchView('projectberry')" id="projectBerryNavBtn" style="display:none"><i class="fas fa-seedling" style="margin-right:4px"></i>Project Berry</button>
       <button onclick="switchView('settings')" id="settingsNavBtn"><i class="fas fa-cog" style="margin-right:4px"></i>Settings</button>
       <button onclick="switchView('dataformat')"><i class="fas fa-table" style="margin-right:4px"></i>Data Format</button>
+      <button onclick="switchView('readme')"><i class="fas fa-book-open" style="margin-right:4px"></i>Read Me</button>
     </div>
   </div>
   <div class="user-badge" id="userBadge"><i class="fas fa-user"></i><span id="userEmail">Loading...</span><span class="role" id="userRole"></span></div>
@@ -2615,6 +2616,179 @@ function toggleOptStore(id){
 }
 
 // ================================================================
+// READ ME TAB — plain-language explanation of every function and calculation
+// ================================================================
+function renderReadMe(){
+  var cur=_getCurrency();
+  var thr=(APP.optimizerConfig||{}).lateEarlyThresholdMin;
+  if(thr==null)thr=30;
+  var S=[];
+  function sec(id,icon,title,body){S.push({id:id,icon:icon,title:title,body:body});}
+  function p(t){return '<p style="margin:0 0 10px">'+t+'</p>';}
+  function ul(a){return '<ul style="margin:0 0 10px 18px;padding:0">'+a.map(function(x){return '<li style="margin-bottom:4px">'+x+'</li>';}).join('')+'</ul>';}
+  function f(t){return '<div style="background:#f8fafc;border:1px solid var(--border);border-left:3px solid var(--primary);border-radius:6px;padding:8px 12px;margin:0 0 10px;font-family:Consolas,monospace;font-size:11.5px">'+t+'</div>';}
+  function tb(head,rows){
+    var h='<div style="overflow-x:auto;margin:0 0 10px"><table style="width:100%;border-collapse:collapse;font-size:11.5px"><thead><tr>';
+    head.forEach(function(c){h+='<th style="padding:7px 10px;text-align:left;background:var(--dark);color:#fff;white-space:normal">'+c+'</th>';});
+    h+='</tr></thead><tbody>';
+    rows.forEach(function(r){h+='<tr>'+r.map(function(c){return '<td style="padding:6px 10px;border-bottom:1px solid var(--border);white-space:normal;vertical-align:top">'+c+'</td>';}).join('')+'</tr>';});
+    return h+'</tbody></table></div>';
+  }
+
+  sec('overview','fa-compass','1. What this app does',
+    p('CPO Check measures how much picker labour costs per order (<b>CPO = Cost Per Order</b>) for every store, how productive the pickers are (<b>UTR = orders per hour</b>), and helps decide where cost can be reduced.')
+    +ul([
+      '<b>Data in:</b> Google Sheets (orders, attendance log, master data, hourly orders, store timing, and optionally the Instashop order sheet).',
+      '<b>Computation:</b> a Python script runs on GitHub Actions twice a day (06:00 and 12:00 UTC = 10:00 and 16:00 Dubai) and writes JSON files into the <i>data</i> folder.',
+      '<b>Display:</b> this web page simply reads those JSON files. Nothing is calculated in your browser except filters, sorting, and a few view-level totals.',
+      '<b>Config:</b> rates, employee costs, working days, holidays and thresholds live in <i>config/app_config.json</i> and are edited from <b>Settings</b> (admin only, using the GitHub token).',
+      'Pressing <b>Refresh</b> in the header only reloads the files already published. New numbers appear after the next scheduled run (or after an admin triggers the workflow).'
+    ]));
+
+  sec('sources','fa-database','2. Data sources',
+    tb(['Source','What it holds','Used for'],[
+      ['Orders sheet','MTD (daily columns), Weekly and Monthly successful orders per store','Orders, CPO, UTR'],
+      ['Daily Attendance log','One row per picker per shift: status (Present / Absent / On Leave / Scheduled), 3PL, shopper ID, store, scheduled and actual clock times','Present days, absences, leave, late/early deductions'],
+      ['Master data','Store to Chain, City, Champion, Supervisor, location','Filters, Champion and Supervisor cost allocation'],
+      ['Hourly orders / GMV / Store timing','Average orders and GMV per hour of day, store opening hours per weekday','Cost Optimizer'],
+      ['Instashop sheet (optional)','Instashop orders and a Mapping tab (Instashop ID to Talabat Vendor ID)','Project Berry'],
+      ['config/app_config.json','Vendor rates, employee costs, working days, holidays, Ramadan, optimizer settings, Project Berry switch','Every calculation']
+    ])+p('The <b>Data Format</b> tab shows the exact column layout each sheet must have.'));
+
+  sec('dashboard','fa-chart-bar','3. Dashboard',
+    p('The main view. Choose a period, filter, and read one row per store.')
+    +ul([
+      '<b>MTD</b> = the whole month so far (only days where both orders and attendance exist). <b>Daily</b> = one day. <b>Weekly</b> = 7 days starting on the date shown (the date is the first day of the week). <b>Monthly</b> = a full calendar month.',
+      '<b>Filters:</b> Chain, City, Supervisor, 3PL and Type, plus the search box (store name, vendor ID, chain, supervisor). Filter lists are built from the data, so new chains and stores appear automatically.',
+      '<b>KPI cards:</b> Total Orders, Total Picker Cost, CPO Picker Only, CPO Full (loaded) and UTR across the filtered stores.',
+      '<b>Row flags:</b> red cross = CPO above the Critical threshold, orange ! = above the Action threshold (both set in Settings, Optimizer). Warning triangle = store has orders but no attendance data. Green seedling = Project Berry store.',
+      '<b>Click a store row</b> to open the picker list: shopper ID, name, 3PL, present days, deducted hours and amount, picker cost, hours worked, allocated orders, UTR and its standard-deviation score.',
+      '<b>Export</b> downloads the filtered table as CSV.'
+    ]));
+
+  sec('cpo','fa-calculator','4. CPO, UTR and cost allocation',
+    f('Picker CPO = Total Picker Cost / Total Orders')
+    +f('Loaded (Full) CPO = (Picker Cost + Champion allocation + Supervisor allocation) / Total Orders')
+    +f('UTR = Total Orders / Total Hours worked')
+    +ul([
+      '<b>Total Hours</b> = sum over pickers of (present days x that 3PL\'s hours per day). Each 3PL has its own hours per day in Vendor Rates.',
+      '<b>Champion allocation:</b> the Champion\'s monthly cost is split equally across all stores that Champion manages, then scaled to the period (days in period / working days).',
+      '<b>Supervisor allocation:</b> the City Supervisor\'s monthly cost is split across all stores under all Champions who report to that Supervisor, then scaled to the period the same way.',
+      'Period scale: Daily = 1 day, Weekly = 7 days, Monthly = working days, MTD = number of valid days so far.',
+      '<b>Example:</b> 600 orders / (12 days x 10 hrs) = 5.0 orders per hour.'
+    ]));
+
+  sec('pay','fa-money-check-alt','5. How a picker\'s pay is calculated',
+    f('Daily rate = 3PL monthly rate / working days of the month')
+    +f('Base pay = Daily rate x Days present')
+    +f('Hourly rate = Daily rate / 3PL hours per day')
+    +f('Total Cost = Base + Holiday OT + Ramadan OT + OT premium - Late/early deduction')
+    +tb(['Rule','Details'],[
+      ['Working days','Default: February 24, 31-day months 27, 30-day months 26. Override per month in Settings, Working Days.'],
+      ['Late-start / early-leave deduction','A picker loses <b>1 hour</b> of pay on any shift where the clock-in is later than the scheduled start by more than <b>'+thr+' minutes</b>, <b>or</b> the clock-out is earlier than the scheduled end by more than <b>'+thr+' minutes</b>. If both happen the same day it is still only 1 hour. Deducted days can never exceed days present. Deduction amount = deducted hours x hourly rate. The grace minutes are editable in Settings, Optimizer, Attendance Pay Rules.'],
+      ['Holiday OT','Only for 3PLs with "Holiday OT?" ticked. Extra pay = holiday days worked x daily rate x (holiday multiplier - 1). For Weekly and Monthly views it is assumed an active picker worked the holidays in that period, capped at their present days.'],
+      ['Ramadan hours','During the Ramadan dates in Settings the shift is shorter (Ramadan hours). Extra pay is only added if that 3PL has Ramadan OT switched on.'],
+      ['OT days (Monthly only)','Days present beyond the month\'s working days earn an extra premium = OT days x daily rate x (OT multiplier - 1), only for 3PLs with "OT Agreement" ticked. Otherwise extra days are just paid at the normal day rate.'],
+      ['Full-salary floor (Monthly only)','If present days + on-leave days cover every calendar day of the month (no real absence), pay is at least the full monthly rate. It only raises pay, never lowers it. A green check marks it in Payment Detail.'],
+      ['Duplicate shift rows','If the sheet has several rows for the same picker on the same day, they count as one day. Priority: Present, then On Leave, then Absent, so row order never matters.']
+    ]));
+
+  sec('utrpicker','fa-user-clock','6. Per-picker UTR and standard deviation',
+    p('Orders are only known per store, not per picker, so a picker\'s orders are allocated by their share of the store\'s present days.')
+    +f('Hours worked = Present days x 3PL hours per day - Deducted hours')
+    +f('Orders allocated = Store orders x (picker present days / store total present days)')
+    +f('Picker UTR = Orders allocated / Hours worked')
+    +f('Mean = average of the store\'s picker UTRs;  sigma = sqrt( average of (UTR - Mean)^2 );  score = (Picker UTR - Mean) / sigma')
+    +ul([
+      'The score tells you how many standard deviations a picker is above (+) or below (-) the store average. Red = 1 sigma or more below, green = 1 sigma or more above.',
+      '<b>Limitation:</b> because orders are shared by days worked, differences come only from shift length and deductions. True productivity differences would need orders per picker per day.'
+    ]));
+
+  sec('attendance','fa-archive','7. Attendance pipeline, archive and freezing',
+    ul([
+      'Every run reads the live Daily Attendance sheet and saves one file per calendar day into <i>data/daily_attendance</i>. This archive is permanent.',
+      '<b>Raw archive freeze:</b> a day older than 30 days is never overwritten once saved, so history cannot silently change or go to zero when the live sheet\'s rolling window moves on. A day with no file is always written, so gaps self-heal.',
+      '<b>Output freeze:</b> computed results are normally recalculated every run, but are locked once settled: Daily after 30 days, Weekly after 10 weeks, Monthly after 3 complete months. Changing a rate or setting later does not rewrite a locked period.',
+      'Weekly, Monthly and MTD attendance are always rebuilt from the archive, never straight from the live sheet.',
+      'Each archived shift stores raw minutes late and early, so a change to the late/early minutes setting re-evaluates every archived day that is still recalculated (not frozen).',
+      'If a 3PL shows almost no attendance, first check that the live attendance sheet was edited recently - the problem is usually upstream.'
+    ]));
+
+  sec('hist','fa-history','8. Historical and Trends',
+    ul([
+      'Line charts and a table of CPO, UTR or both over Daily, Weekly or Monthly periods.',
+      'Filter by chain, store, from-date and to-date, then press Compute; missing periods are fetched one at a time and cached.',
+      'The date-range calculator gives a combined CPO over any chosen range.'
+    ]));
+
+  sec('optimizer','fa-lightbulb','9. Cost Optimizer',
+    p('Ranks cost-reduction options per store using current MTD data and the hourly demand curve. Options that are not viable are shown with the exact reason.')
+    +ul([
+      '<b>Headcount reduction:</b> minimum pickers = ceil(peak hourly orders / OT UTR threshold). Never suggests cutting more than 1 picker per recommendation; re-check after each step.',
+      '<b>Trim low-volume edges:</b> removes opening/closing hours where both average orders and average GMV are below the edge thresholds, reducing OT.',
+      '<b>Day-off coverage:</b> when a picker is off, a colleague covers the whole opening window; hours beyond the contract are OT. OT cost = pickers x (days/6) x OT hours x OT multiplier x hourly rate. There is no external reliever and store closure is never suggested.',
+      '<b>Weekly staffing heatmap:</b> pickers needed per hour for each weekday, using real opening hours per day. Order volume per weekday is not available, so the same hourly curve is applied to every day.',
+      'Peak hour is scanned across all 24 hours, not just opening hours.'
+    ]));
+
+  sec('paydetail','fa-money-bill-wave','10. Payment Detail',
+    p('A flat list of pickers for Daily, Weekly or Monthly: present, absent and on-leave days, deduction hours and cost, OT days and amount, and Total Cost, using the rules in section 5. Filter by chain, store or 3PL, search by name or ID, and export CSV.'));
+
+  sec('berry','fa-seedling','11. Project Berry (Talabat and Instashop)',
+    p('At a few stores Talabat and Instashop share the same pickers. The store\'s picker cost is split by order share.')
+    +f('Talabat share = Talabat orders / (Talabat orders + Instashop orders);  Talabat pays = Total picker cost x Talabat share')
+    +ul([
+      '<b>Example:</b> 2 pickers x 2,000 = 4,000. 100 Talabat + 100 Instashop orders = CPO 20, so 2,000 each. With 150 + 50 orders: 3,000 Talabat, 1,000 Instashop.',
+      'Only stores listed in the Mapping tab of the Instashop sheet are affected. Add a row there and the store is picked up on the next run.',
+      'Everywhere else in the app (Dashboard, Payment Detail), Picker Cost is Talabat\'s share only. Instashop\'s share is shown in the Project Berry tab with CPO per side and filters.',
+      'Turn it on or off in Settings, Project Berry. When off, no split happens at all.'
+    ]));
+
+  sec('settings','fa-cog','12. Settings (what each tab controls)',
+    tb(['Tab','What you can change'],[
+      ['Vendor Rates','Per 3PL: monthly rate, hours per day, effective start/end month, OT multiplier, Ramadan hours, Ramadan OT, Holiday OT and multiplier, OT Agreement. Rates can change over time with effective dates.'],
+      ['Employee Costs','Monthly cost of Champion and City Supervisor, with effective dates.'],
+      ['Working Days','Override working days for a month.'],
+      ['Holidays and Ramadan','Public holiday dates and the Ramadan period.'],
+      ['Optimizer','Currency, CPO Action/Critical thresholds, reliever and OT settings, edge-trim thresholds, and the <b>late/early grace minutes</b>.'],
+      ['Project Berry','On/off switch for cost sharing.'],
+      ['Fetch All Data / Actions','Shows data freshness and workflow history (data is refreshed by GitHub Actions).'],
+      ['User Access','Add users and set roles: Admin (everything), Manager (all data), Supervisor (own stores), Viewer (read only), Revoked (no access).'],
+      ['GitHub Token','Personal access token (repo scope) stored only in this browser. Needed to save any setting.']
+    ])+p('Saved settings take effect on the next compute run. Locked (frozen) periods keep their original numbers.'));
+
+  sec('glossary','fa-book','13. Glossary and quick troubleshooting',
+    tb(['Term','Meaning'],[
+      ['CPO','Cost per order = cost / orders'],
+      ['Loaded CPO / CPO Full','CPO including Champion and Supervisor cost'],
+      ['UTR','Picker utilization rate, orders per picker-hour'],
+      ['MTD','Month to date'],
+      ['3PL','Outsourced manpower vendor supplying the pickers'],
+      ['Sigma (standard deviation)','Typical spread of picker UTR around the store average']
+    ])
+    +ul([
+      '<b>Numbers did not change after I edited a setting:</b> wait for the next scheduled run, or ask an admin to run the workflow. Locked past periods never change.',
+      '<b>Store shows orders but 0 pickers:</b> no attendance rows for that store in the period (warning triangle).',
+      '<b>A store is missing from Project Berry:</b> check it is in the Instashop Mapping tab and has Instashop orders in the selected period.',
+      '<b>Cannot save settings:</b> add your GitHub token in Settings, GitHub Token.'
+    ]));
+
+  var h='<div style="padding:16px 28px;max-width:1000px">';
+  h+='<h2 style="font-size:16px;font-weight:700;color:var(--dark);margin:0 0 4px"><i class="fas fa-book-open" style="color:var(--primary);margin-right:8px"></i>Read Me</h2>';
+  h+='<p style="font-size:12px;color:var(--muted);margin:0 0 14px">How every part of the app works and how each number is calculated. Currency shown: '+cur+'.</p>';
+  h+='<div style="background:var(--card);border:1.5px solid var(--border);border-radius:var(--radius);padding:12px 16px;margin-bottom:18px;display:flex;flex-wrap:wrap;gap:8px">';
+  S.forEach(function(s){h+='<a href="#" onclick="var e=document.getElementById(\'rm_'+s.id+'\');if(e)e.scrollIntoView({behavior:\'smooth\',block:\'start\'});return false" style="font-size:11px;color:var(--dark);background:var(--cream);padding:4px 10px;border-radius:14px;text-decoration:none"><i class="fas '+s.icon+'" style="color:var(--primary);margin-right:5px"></i>'+s.title.replace(/^\d+\.\s*/,'')+'</a>';});
+  h+='</div>';
+  S.forEach(function(s){
+    h+='<div id="rm_'+s.id+'" style="background:var(--card);border:1.5px solid var(--border);border-radius:var(--radius);box-shadow:var(--shadow);margin-bottom:16px;overflow:hidden">';
+    h+='<div style="padding:11px 18px;border-bottom:1.5px solid var(--border);background:linear-gradient(90deg,var(--card),var(--cream));font-size:13px;font-weight:700;color:var(--dark)"><i class="fas '+s.icon+'" style="color:var(--primary);margin-right:8px"></i>'+s.title+'</div>';
+    h+='<div style="padding:14px 18px;font-size:12px;color:var(--text);line-height:1.55">'+s.body+'</div></div>';
+  });
+  h+='</div>';
+  document.getElementById('mainContent').innerHTML=h;
+}
+
+// ================================================================
 // DATA FORMAT TAB
 // ================================================================
 function renderDataFormat(){
@@ -2928,6 +3102,7 @@ function switchView(view){
   else if(view==='projectberry'){renderProjectBerry();}
   else if(view==='settings'){renderSettings();}
   else if(view==='dataformat'){renderDataFormat();}
+  else if(view==='readme'){renderReadMe();}
 }
 
 // ================================================================
@@ -3445,6 +3620,11 @@ function renderOptimizerTab(){
   h+=row('Weekday Day-Off Only','weekdayDayOffOnly',cfg.weekdayDayOffOnly!=null?cfg.weekdayDayOffOnly:1,'(1=yes 0=no)',0,1,1,'1 = exclude weekends from day-off events (pickers take day off on weekdays only)');
   h+='</div>';
 
+  // Attendance pay rules
+  h+=grp('Attendance Pay Rules','fa-user-clock','A picker loses 1 hour of pay on a shift when they clock in later than the scheduled start, or clock out earlier than the scheduled end, by MORE than this many minutes. Applies from the next compute run to every period that is not yet locked.');
+  h+=row('Late / Early Grace','lateEarlyThresholdMin',cfg.lateEarlyThresholdMin!=null?cfg.lateEarlyThresholdMin:30,'minutes',0,240,5,'Default 30. Example: 15 = more than 15 min late or early triggers the 1-hour deduction');
+  h+='</div>';
+
   // Group 3 — Store Action Thresholds
   h+=grp('Store Action Thresholds','fa-store','Order volume threshold used to suggest reduced shift hours.');
   h+=row('Low Order Threshold (Timing)','lowOrderPerDay',cfg.lowOrderPerDay||10,'orders/day',1,100,1,'Stores below this avg → suggest reduced shift hours');
@@ -3468,7 +3648,8 @@ function saveOptimizerSettings(){
     otUTRThreshold:parseFloat(document.getElementById('opt_otUTRThreshold').value)||5,
     edgeOrderThreshold:parseFloat(document.getElementById('opt_edgeOrderThreshold').value)||1,
     edgeGMVThreshold:parseFloat(document.getElementById('opt_edgeGMVThreshold').value)||50,
-    weekdayDayOffOnly:parseInt(document.getElementById('opt_weekdayDayOffOnly').value)||0
+    weekdayDayOffOnly:parseInt(document.getElementById('opt_weekdayDayOffOnly').value)||0,
+    lateEarlyThresholdMin:(function(){var v=parseFloat(document.getElementById('opt_lateEarlyThresholdMin').value);return isNaN(v)||v<0?30:v;})()
   };
   google.script.run.withSuccessHandler(function(){
     APP.optimizerConfig=cfg;

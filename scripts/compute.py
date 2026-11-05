@@ -406,12 +406,13 @@ def read_daily_attendance_log(gc):
         # possible) — not counted as present, absent, or on leave; they carry
         # no attendance signal either way.
         deduction = 0
+        late_min = early_min = 0
         if present:
             actual_in  = _parse_dt(g(c_ci_time))
             actual_out = _parse_dt(g(c_co_time))
             sched_end  = _parse_dt(g(c_sch_end))
-            late_min  = (actual_in - sched_start).total_seconds() / 60 if actual_in else 0
-            early_min = (sched_end - actual_out).total_seconds() / 60 if (actual_out and sched_end) else 0
+            late_min  = max(0, round((actual_in - sched_start).total_seconds() / 60)) if actual_in else 0
+            early_min = max(0, round((sched_end - actual_out).total_seconds() / 60)) if (actual_out and sched_end) else 0
             if late_min > LATE_EARLY_THRESHOLD_MIN or early_min > LATE_EARLY_THRESHOLD_MIN:
                 deduction = 1
 
@@ -426,6 +427,11 @@ def read_daily_attendance_log(gc):
             'absent':     absent,
             'onLeave':    on_leave,
             'deduction':  deduction,
+            # Raw minutes late / early are archived so the threshold (Settings ->
+            # Optimizer -> lateEarlyThresholdMin) can be changed later and still
+            # re-evaluate every archived day, not just new ones.
+            'lateMin':    late_min,
+            'earlyMin':   early_min,
         })
     print(f'    {len(data) - 1} rows -> {len(by_date)} distinct days')
     return by_date
@@ -461,6 +467,10 @@ def archive_daily_attendance(by_date):
                     existing = json.load(f)
                 ex_records = existing.get('records', [])
                 if ex_records and 'status' not in ex_records[0]:
+                    needs_migration = True
+                # Also upgrade (once) any archived day that predates lateMin/
+                # earlyMin, so a changed threshold can re-evaluate it.
+                elif any(r.get('present') and 'lateMin' not in r for r in ex_records):
                     needs_migration = True
             except Exception:
                 pass
@@ -539,7 +549,13 @@ def build_attend_struct(archived_by_date, date_labels, period):
                 if rec['present']:
                     if 2 > a['level']:
                         a['present'], a['absent'], a['onLeave'], a['level'] = 1, 0, 0, 2
-                    if rec.get('deduction'):
+                    # Re-evaluate against the CURRENT threshold when raw minutes
+                    # were archived; legacy days fall back to the stored flag.
+                    if 'lateMin' in rec:
+                        ded = rec['lateMin'] > LATE_EARLY_THRESHOLD_MIN or rec.get('earlyMin', 0) > LATE_EARLY_THRESHOLD_MIN
+                    else:
+                        ded = rec.get('deduction')
+                    if ded:
                         a['deduction'] = 1
                 elif rec.get('onLeave'):
                     if 1 > a['level']:
@@ -1186,9 +1202,16 @@ def compute_cpo(period, date_index, orders, attend, master, cfg, is_mtd=False, i
 
 # ── Main ─────────────────────────────────────────────────────────
 def main():
+    global LATE_EARLY_THRESHOLD_MIN
     print('CPO Compute starting...')
     gc  = get_client()
     cfg = load_config()
+    # Late-start / early-leave grace minutes — editable in Settings -> Optimizer.
+    try:
+        LATE_EARLY_THRESHOLD_MIN = float((cfg.get('optimizer') or {}).get('lateEarlyThresholdMin', LATE_EARLY_THRESHOLD_MIN))
+    except (TypeError, ValueError):
+        pass
+    print(f'  late/early threshold: {LATE_EARLY_THRESHOLD_MIN} min')
 
     # 1. Read all raw data from Sheets
     print('Reading Sheets...')
