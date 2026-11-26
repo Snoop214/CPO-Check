@@ -1343,6 +1343,33 @@ function pbrExportCSV(){
 // ================================================================
 // HISTORICAL & TRENDS VIEW — proper selector-first approach
 // ================================================================
+function normalizeChainName(raw){
+  if(!raw)return'';var s=raw.trim();var l=s.toLowerCase().replace(/\s+/g,' ');
+  if(/^lulu\s*(express\s*(supermarket|fresh\s*market)?|express\s*$)/i.test(l)||/^lulu\s*express\s*supermarket/i.test(l))return'LuLu Express';
+  if(/^lulu\s*hypermarket/i.test(l)||l==='lulu hypermarket')return'LuLu Hypermarket';
+  if(/^sava(\s+supermarket)?$/i.test(l))return'SAVA Supermarket';
+  if(/^g[eé]ant/i.test(l))return'Géant Hypermarket';
+  if(/^carrefour\s*express/i.test(l))return'Carrefour Express';
+  if(/^carrefour\s*market/i.test(l))return'Carrefour Market';
+  if(/^carrefour$/i.test(l))return'Carrefour';
+  return s;
+}
+function toggleTalabatPicker(){
+  APP.talabatPickerOnly=APP.talabatPickerOnly===false?true:false;
+  var on=APP.talabatPickerOnly!==false;
+  var tog=document.getElementById('talabatPickerToggle');
+  var lbl=document.getElementById('talabatPickerLabel');
+  if(tog){tog.style.background=on?'var(--primary)':'#cbd5e1';var knob=tog.querySelector('div');if(knob){knob.style.right=on?'2px':'auto';knob.style.left=on?'auto':'2px';}}
+  if(lbl){lbl.textContent=on?'ON':'OFF';lbl.style.color=on?'var(--primary)':'var(--muted)';}
+  showToast('Talabat Picker: '+(on?'ON — attendance stores only':'OFF — all stores'),'success');
+}
+function downloadTrendChart(){
+  var chart=APP._mainTrendChart;if(!chart){showToast('Calculate a trend first','error');return;}
+  var url=chart.canvas.toDataURL('image/png');var a=document.createElement('a');a.href=url;
+  var chain=document.getElementById('tChain')?document.getElementById('tChain').value||'All':'All';
+  a.download='CPO_Trend_'+chain.replace(/\s+/g,'_')+'_'+(APP.trendView||'weekly')+'_'+new Date().toISOString().slice(0,10)+'.png';
+  a.click();showToast('Chart downloaded','success');
+}
 function renderHistoricalView(){
   // Build chain and store lists — use APP.masterData (ALL stores, from master sheet)
   var chains={}, stores={};
@@ -1350,15 +1377,17 @@ function renderHistoricalView(){
   if(APP.masterData){
     Object.keys(APP.masterData).forEach(function(vid){
       var m=APP.masterData[vid];
-      if(m.chainName)chains[m.chainName]=1;
-      if(m.storeName)stores[vid]={name:m.storeName,chain:m.chainName||''};
+      var cn=normalizeChainName(m.chainName);
+      if(cn)chains[cn]=1;
+      if(m.storeName)stores[vid]={name:m.storeName,chain:cn};
     });
   }
   // Supplement from APP.allData and cache (adds any stores not in master)
   if(APP.allData&&APP.allData.length){
     APP.allData.forEach(function(r){
-      if(r.chain)chains[r.chain]=1;
-      if(r.storeName&&r.vendorId&&!stores[r.vendorId])stores[r.vendorId]={name:r.storeName,chain:r.chain};
+      var cn=normalizeChainName(r.chain);
+      if(cn)chains[cn]=1;
+      if(r.storeName&&r.vendorId&&!stores[r.vendorId])stores[r.vendorId]={name:r.storeName,chain:cn};
     });
   }
   // Also add archived months
@@ -1443,7 +1472,12 @@ function renderHistoricalView(){
   // Type
   html+='<div class="fg"><label>Type</label><select id="tType"><option value="Picker">Picker</option><option value="Picker,Scanner">Picker+Scanner</option><option value="Picker,Scanner,Retail Hub Scanner">All Types</option></select></div>';
 
-  html+='<div><button class="btn btn-primary" onclick="calculateTrend()"><i class="fas fa-play"></i> Calculate</button></div>';
+  var tpOn=APP.talabatPickerOnly!==false;
+  html+='<div class="fg" style="align-items:center;gap:7px"><label style="font-size:10px;font-weight:600;color:var(--muted);text-transform:uppercase;white-space:nowrap">Talabat Picker</label>';
+  html+='<div onclick="toggleTalabatPicker()" id="talabatPickerToggle" title="ON: only stores with attendance" style="width:40px;height:22px;border-radius:11px;background:'+(tpOn?'var(--primary)':'#cbd5e1')+';cursor:pointer;position:relative;transition:background .2s;flex-shrink:0"><div style="width:18px;height:18px;background:#fff;border-radius:50%;position:absolute;top:2px;'+(tpOn?'right:2px':'left:2px')+';transition:all .2s;box-shadow:0 1px 3px rgba(0,0,0,.2)"></div></div>';
+  html+='<span id="talabatPickerLabel" style="font-size:11px;color:'+(tpOn?'var(--primary)':'var(--muted)')+';font-weight:600">'+(tpOn?'ON':'OFF')+'</span></div>';
+  html+='<div style="display:flex;gap:8px;align-items:center"><button class="btn btn-primary" onclick="calculateTrend()"><i class="fas fa-play"></i> Calculate</button>';
+  html+='<button class="btn btn-outline" onclick="downloadTrendChart()" title="Download chart PNG"><i class="fas fa-download"></i> Chart</button></div>';
   html+='</div>'; // end controls
 
   // Default To = last option (already filtered to current month max)
@@ -1763,7 +1797,8 @@ function renderTrendChart(trendData){
           var val=ds.data[i];
           if(val==null)return;
           var label=di===0?(val.toFixed?val.toFixed(2):val):di===1?(val.toFixed?val.toFixed(1):val):fmt(val);
-          chartCtx.fillText(label,pt.x,pt.y-10);
+          var yOff=di===0?-14:di===1?12:26;
+          chartCtx.fillText(label,pt.x,pt.y+yOff);
         });
       });
       chartCtx.restore();
@@ -1784,8 +1819,10 @@ function renderTrendTable(trendData){
   pts.forEach(function(p){
     if(!p.data||p.data.error)return;
     var rows=(p.data.data||[]).filter(function(r){
-      if(chain&&r.chain!==chain)return false;
+      var rChain=normalizeChainName(r.chain);
+      if(chain&&rChain!==chain)return false;
       if(stores.length>0&&stores.indexOf(r.vendorId)<0)return false;
+      if(APP.talabatPickerOnly!==false&&r.pickerCount===0)return false;
       return true;
     });
     var to=0,tc=0,uN=0,uD=0;
