@@ -1364,11 +1364,16 @@ function toggleTalabatPicker(){
   showToast('Talabat Picker: '+(on?'ON — attendance stores only':'OFF — all stores'),'success');
 }
 function downloadTrendChart(){
-  var chart=APP._mainTrendChart;if(!chart){showToast('Calculate a trend first','error');return;}
-  var url=chart.canvas.toDataURL('image/png');var a=document.createElement('a');a.href=url;
+  var rows=APP._trendTableRows;
+  if(!rows||!rows.length){showToast('Calculate a trend first','error');return;}
+  var csv='Period,Orders,Orders Delta%,Picker Cost,CPO (AED),CPO Delta%,UTR (ord/hr),UTR Delta%\n';
+  rows.forEach(function(r){csv+=r.period+','+r.orders+','+(r.ordersPct!=null?r.ordersPct:'')+','+r.cost+','+r.cpo+','+(r.cpoPct!=null?r.cpoPct:'')+','+r.utr+','+(r.utrPct!=null?r.utrPct:'')+'\n';});
   var chain=document.getElementById('tChain')?document.getElementById('tChain').value||'All':'All';
-  a.download='CPO_Trend_'+chain.replace(/\s+/g,'_')+'_'+(APP.trendView||'weekly')+'_'+new Date().toISOString().slice(0,10)+'.png';
-  a.click();showToast('Chart downloaded','success');
+  var view=APP.trendView||'weekly';
+  var a=document.createElement('a');
+  a.href=URL.createObjectURL(new Blob([csv],{type:'text/csv;charset=utf-8;'}));
+  a.download='CPO_Trend_'+chain.replace(/\s+/g,'_')+'_'+view+'_'+new Date().toISOString().slice(0,10)+'.csv';
+  a.click();showToast('CSV downloaded','success');
 }
 function renderHistoricalView(){
   // Build chain and store lists — use APP.masterData (ALL stores, from master sheet)
@@ -1477,7 +1482,7 @@ function renderHistoricalView(){
   html+='<div onclick="toggleTalabatPicker()" id="talabatPickerToggle" title="ON: only stores with attendance" style="width:40px;height:22px;border-radius:11px;background:'+(tpOn?'var(--primary)':'#cbd5e1')+';cursor:pointer;position:relative;transition:background .2s;flex-shrink:0"><div style="width:18px;height:18px;background:#fff;border-radius:50%;position:absolute;top:2px;'+(tpOn?'right:2px':'left:2px')+';transition:all .2s;box-shadow:0 1px 3px rgba(0,0,0,.2)"></div></div>';
   html+='<span id="talabatPickerLabel" style="font-size:11px;color:'+(tpOn?'var(--primary)':'var(--muted)')+';font-weight:600">'+(tpOn?'ON':'OFF')+'</span></div>';
   html+='<div style="display:flex;gap:8px;align-items:center"><button class="btn btn-primary" onclick="calculateTrend()"><i class="fas fa-play"></i> Calculate</button>';
-  html+='<button class="btn btn-outline" onclick="downloadTrendChart()" title="Download chart PNG"><i class="fas fa-download"></i> Chart</button></div>';
+  html+='<button class="btn btn-outline" onclick="downloadTrendChart()" title="Download trend data as CSV"><i class="fas fa-download"></i> CSV</button></div>';
   html+='</div>'; // end controls
 
   // Default To = last option (already filtered to current month max)
